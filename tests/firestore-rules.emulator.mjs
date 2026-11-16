@@ -13,6 +13,8 @@ assert.equal(compile.status, 200, await compile.text());
 const enc = value => {
   if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') return { integerValue: String(value) };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(enc) } };
+  if (value && typeof value === 'object') return { mapValue: { fields: fields(value) } };
   return { stringValue: value };
 };
 const fields = value => Object.fromEntries(Object.entries(value).map(([k, v]) => [k, enc(v)]));
@@ -69,6 +71,13 @@ await check('client order creation blocked', false, '/orders/fake', customer, 'P
 await check('client price tampering blocked', false, '/orders/order1?updateMask.fieldPaths=total', customer, 'PATCH', { fields: fields({ total: 1 }) });
 await check('admin financial snapshot immutable', false, '/orders/order1?updateMask.fieldPaths=total', admin, 'PATCH', { fields: fields({ total: 1 }) });
 await check('admin operational update', true, '/orders/order1?updateMask.fieldPaths=note', admin, 'PATCH', { fields: fields({ note: 'Call before delivery' }) });
+// Payment audit trail and S3 invoicing state are worker-owned: no client may write them.
+for (const field of ['paymentStatus', 'paymentHistory', 's3SyncStatus', 's3InvoiceStatus', 's3RestockRequired', 's3RestockLines', 's3PaymentReconcileRequired']) {
+  await check('admin cannot write ' + field, false, `/orders/order1?updateMask.fieldPaths=${field}`, admin, 'PATCH', { fields: fields({ [field]: field === 'paymentStatus' ? 'paid' : 'x' }) });
+}
+await check('customer cannot self-mark paid', false, '/orders/order1?updateMask.fieldPaths=paymentStatus', customer, 'PATCH', { fields: fields({ paymentStatus: 'paid' }) });
+await check('admin can still cancel order', true, '/orders/order1?updateMask.fieldPaths=status', admin, 'PATCH', { fields: fields({ status: 'cancelled' }) });
+
 await check('private user docs denied', false, '/users/customer/private/quota', customer);
 await check('own skin report', true, '/users/customer/skinReports/report1', customer);
 await check('sales cannot read health data', false, '/users/customer/skinReports/report1', jwt('sales', { role: 'sales' }));
