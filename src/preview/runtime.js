@@ -64,6 +64,33 @@ export async function previewApiRequest(path, options = {}) {
     await sdk.updateDoc(result, { id: result.id });
     return { success: true, orderId: result.id, ...record, discount };
   }
+  if (/^\/admin\/orders\/[^/]+\/payment$/.test(path) && method === 'POST') {
+    // Preview keeps the same contract as the worker so the UI branch is exercised
+    // (paymentHistory + S3 reconcile flag) instead of silently doing nothing.
+    const orderId = decodeURIComponent(path.split('/')[3]);
+    const reference = sdk.doc('orders', orderId);
+    const snapshot = await sdk.getDoc(reference);
+    const current = snapshot.data() || {};
+    const previous = String(current.paymentStatus || 'unpaid').toLowerCase();
+    const next = String(body.paymentStatus || '').toLowerCase();
+    if (!['unpaid', 'pending_transfer', 'paid', 'refunded'].includes(next)) {
+      throw new Error(`Trạng thái thanh toán "${next}" không hợp lệ.`);
+    }
+    if (next === 'refunded' && previous !== 'paid') {
+      throw new Error('Chỉ có thể hoàn tiền cho đơn đã được đánh dấu "Đã trả".');
+    }
+    const entry = { from: previous, to: next, changedBy: 'preview', note: '', timestamp: new Date().toISOString() };
+    const paymentHistory = Array.isArray(current.paymentHistory) ? [...current.paymentHistory, entry] : [entry];
+    const s3ReconcileRequired = current.s3InvoiceStatus === 'issued' && previous !== next;
+    await sdk.updateDoc(reference, {
+      paymentStatus: next,
+      paymentHistory,
+      ...(s3ReconcileRequired
+        ? { s3PaymentReconcileRequired: true, s3PaymentReconcileFrom: previous, s3PaymentReconcileTo: next }
+        : {})
+    });
+    return { success: true, preview: true, previousPaymentStatus: previous, paymentStatus: next, paymentHistory, s3ReconcileRequired };
+  }
   if (/^\/admin\/orders\/[^/]+\/transition$/.test(path) && method === 'POST') {
     await sdk.updateDoc(sdk.doc('orders', decodeURIComponent(path.split('/')[3])), { status: body.targetStatus });
     return { success: true, preview: true };
@@ -74,6 +101,7 @@ export async function previewApiRequest(path, options = {}) {
   if (path === '/admin/audit-logs') return { logs: (await sdk.getDocs(sdk.collection('auditLogs'))).docs.map(d => ({ id: d.id, ...d.data() })) };
   if (path === '/admin/staff') return { staff: [seed['users/preview-admin']] };
   if (path.includes('/resync-s3')) throw new Error('Bản xem giao diện không đồng bộ sang phần mềm bán hàng thật.');
+  if (path.includes('/issue-invoice')) throw new Error('Bản xem giao diện không xuất hoá đơn sang phần mềm bán hàng thật.');
   if (method === 'GET') return { items: [], preview: true };
   throw new Error('Thao tác này cần backend mới; bản xem giao diện chưa gửi yêu cầu ra ngoài.');
 }

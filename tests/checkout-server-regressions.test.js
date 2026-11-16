@@ -16,7 +16,12 @@ function setup(promotions = {}) {
     isValidFirebasePrivateKey: () => true,
     getDocument: async (_, file) => file === 'products/product-1' ? catalog[0] : promotions[file] || null,
     commitWrites: async () => {}, documentName: (_, file) => file, encodeFields: value => value,
-    json: (_, __, body, status = 200) => ({ body, status })
+    json: (_, __, body, status = 200) => ({ body, status }),
+    // S3 is not configured in these checkout regressions; the stock guard must stay inert.
+    getS3Config: () => ({ enabled: false, branchId: 9099 }),
+    fetchS3Inventory: async () => null,
+    findStockShortages: () => [],
+    buildRestockLines: () => []
   };
   vm.createContext(context); vm.runInContext(code, context);
   return couponCode => context.createOrder({ headers: new Headers(), json: async () => ({

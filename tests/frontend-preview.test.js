@@ -34,6 +34,32 @@ test('preview collection reads, queries and writes are local, persist and reset 
   assert.equal(seed['products/p1'].price,100);
 });
 
+test('preview payment endpoint mirrors the worker contract instead of writing bare status', async () => {
+  const runtime = await import('../src/preview/runtime.js');
+  runtime.previewBackend.reset();
+
+  // Refunding an order nobody paid must be refused, exactly like worker/index.js.
+  await assert.rejects(
+    () => runtime.previewApiRequest('/admin/orders/DEMO-ORDER-001/payment', {
+      method: 'POST', body: JSON.stringify({ paymentStatus: 'refunded' })
+    }),
+    /hoàn tiền cho đơn đã được đánh dấu/
+  );
+
+  const result = await runtime.previewApiRequest('/admin/orders/DEMO-ORDER-001/payment', {
+    method: 'POST', body: JSON.stringify({ paymentStatus: 'paid' })
+  });
+  assert.equal(result.paymentStatus, 'paid');
+  assert.equal(result.previousPaymentStatus, 'unpaid');
+  assert.equal(result.paymentHistory.length, 1);
+  assert.equal(result.paymentHistory[0].changedBy, 'preview');
+
+  const stored = (await runtime.previewBackend.sdk.firestore
+    .getDoc(runtime.previewBackend.sdk.firestore.doc('orders', 'DEMO-ORDER-001'))).data();
+  assert.equal(stored.paymentStatus, 'paid', 'phải ghi vào store, không chỉ trả response');
+  assert.equal(stored.paymentHistory.length, 1);
+});
+
 test('preview integration intercepts Firebase, HTTP, tracking and POS before their production paths', () => {
   const read = file => fs.readFileSync(path.join(__dirname,'..',file),'utf8');
   assert.match(read('src/infrastructure/firebase/client.js'),/isFrontendPreview \? previewBackend\.auth : getAuth/);

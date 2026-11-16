@@ -81,6 +81,12 @@ function createTestContext(overrides = {}) {
     documentName: (_, path) => `projects/test/databases/(default)/documents/${path}`,
     json: (_, __, body, status = 200) => ({ body, status }),
     syncOrderToS3: async () => ({ success: true, s3OrderId: 'S3-MOCK-123', s3SyncStatus: 'synced' }),
+    // S3 is off in these pricing tests, so the stock guard and the restock bookkeeping
+    // must be inert rather than reach the network.
+    getS3Config: () => ({ enabled: false, branchId: 9099 }),
+    fetchS3Inventory: async () => null,
+    findStockShortages: () => [],
+    buildRestockLines: () => [],
     sendTelegramOrderNotification: async () => true,
     ...overrides
   };
@@ -200,6 +206,76 @@ test('GD2: Idempotency Key chặn đứng bấm đúp tạo đơn trùng lặp',
   const res2 = await context.createOrder(req2, env, user);
   assert.equal(res2.body.duplicate, true);
   assert.equal(res2.body.orderId, res1.body.orderId);
+});
+
+test('GD2: Đơn đã hoàn tất vẫn phải trả hàng/huỷ được để ghi công nợ hoàn kho S3', async () => {
+  // A completed order is the only kind that carries an S3 invoice, so if `completed` were
+  // terminal the customer could never return the goods: the transition would be rejected,
+  // s3RestockRequired would never be written, and the stock S3 already deducted would stay
+  // deducted forever. This test pins the reversal path that makes the restock block reachable.
+  const orderDoc = {
+    id: 'ord_done',
+    userId: 'user_1',
+    status: 'completed',
+    total: 500000,
+    paymentMethod: 'cod',
+    paymentStatus: 'paid',
+    s3SyncStatus: 'synced',
+    s3InvoiceStatus: 'issued',
+    items: [{ s3ProductId: 1800406, name: 'Kem body Lotion 200', quantity: 2 }]
+  };
+  const written = {};
+  const { context } = createTestContext({
+    getDocument: async (_, path) => (path === 'orders/ord_done' ? orderDoc : null),
+    commitWrites: async (_, writes) => {
+      for (const w of writes) {
+        if (w.update && w.update.fields) Object.assign(written, w.update.fields);
+      }
+    },
+    // Restock lines are computed by the real helper in production; here the question is
+    // only whether the worker records the obligation and answers with it.
+    buildRestockLines: () => [{ s3ProductId: 1800406, name: 'Kem body Lotion 200', quantity: 2 }]
+  });
+
+  const adminUser = { sub: 'admin_1', admin: true, email: 'admin@skinid.vn' };
+  const env = { FIREBASE_PROJECT_ID: 'test', FIREBASE_CLIENT_EMAIL: 'test', FIREBASE_PRIVATE_KEY: 'test' };
+
+  const res = await context.transitionOrderStatus(
+    { json: async () => ({ targetStatus: 'returned', note: 'Khách gửi trả' }) },
+    env,
+    adminUser,
+    'ord_done'
+  );
+
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.status, 'returned');
+  assert.equal(written.s3RestockRequired, true, 'phải ghi công nợ hoàn kho');
+  assert.equal(written.s3RestockReason, 'returned');
+  assert.deepEqual(written.s3RestockLines, [
+    { s3ProductId: 1800406, name: 'Kem body Lotion 200', quantity: 2 }
+  ]);
+  assert.equal(res.body.restockRequired, true, 'phản hồi phải báo cho admin biết');
+  assert.equal(res.body.restockLines.length, 1);
+
+  // Cancelling a completed order is the other way an invoiced order comes back.
+  const cancelRes = await context.transitionOrderStatus(
+    { json: async () => ({ targetStatus: 'cancelled', note: 'Huỷ sau khi giao' }) },
+    env,
+    adminUser,
+    'ord_done'
+  );
+  assert.equal(cancelRes.body.success, true);
+
+  // Terminal states must still be terminal once restock has been recorded.
+  await assert.rejects(
+    async () => context.transitionOrderStatus(
+      { json: async () => ({ targetStatus: 'pending' }) },
+      env,
+      adminUser,
+      'ord_done'
+    ),
+    err => err.code === 'invalid_transition'
+  );
 });
 
 test('GD2: Cỗ máy trạng thái (State Machine) quản trị đơn hàng', async () => {

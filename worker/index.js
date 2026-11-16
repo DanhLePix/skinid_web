@@ -15,10 +15,10 @@ import { ApiError } from './app/errors.js';
 import { json, corsHeaders } from './app/http.js';
 import { isValidFirebasePrivateKey, requiredFirebaseEnv } from './app/env.js';
 import { authenticate } from './infrastructure/firebase/auth.js';
-import { syncOrderToS3 } from './services/s3Dispatch.js';
+import { syncOrderToS3, dispatchInvoiceS3 } from './services/s3Dispatch.js';
 import { sendTelegramOrderNotification } from './services/telegramService.js';
 import { integrationStatus } from './app/integrations.js';
-import { getOrRefreshToken, issueInvoiceToS3 } from './services/s3Service.js';
+import { getOrRefreshToken, buildRestockLines, fetchS3Inventory, findStockShortages } from './services/s3Service.js';
 import { getS3Config } from './app/env.js';
 
 const bundledProducts = new Map(SERVER_CATALOG.map(product => [product.id, product]));
@@ -117,6 +117,35 @@ async function createOrder(request, env, user) {
   }
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
   const now = new Date();
+
+  // Refuse to sell stock the branch does not have. S3 deducts branch stock at invoice
+  // time, so an oversold order is only discovered when it is delivered — after the
+  // customer has already paid. This check is skipped when S3 is disabled or its inventory
+  // cannot be read: an outage must never block checkout, it only removes the guard.
+  const s3Config = getS3Config(env);
+  if (s3Config.enabled) {
+    try {
+      const inventoryToken = await getOrRefreshToken(s3Config, fetch);
+      const inventory = await fetchS3Inventory({ token: inventoryToken, config: s3Config });
+      const shortages = findStockShortages(
+        items.map(item => ({ YS_ProductID: item.s3ProductId, QuantitySold: item.quantity })),
+        inventory
+      );
+      if (shortages.length) {
+        const shortage = shortages[0];
+        throw new ApiError(
+          409,
+          'insufficient_stock',
+          `${shortage.name || `Sản phẩm ${shortage.productId}`} chỉ còn ${shortage.available} sản phẩm, không đủ ${shortage.requested} trong đơn của bạn.`
+        );
+      }
+    } catch (err) {
+      // A stock-check failure is not a checkout failure: the invoice pre-flight still
+      // rejects an oversold order before any stock is deducted.
+      if (err instanceof ApiError && err.code === 'insufficient_stock') throw err;
+      console.warn('[Worker Stock Check Warning]', err.message);
+    }
+  }
 
   // Validate coupon against Firestore promotions or fallback
   const couponCode = String(payload.couponCode || '').trim().toUpperCase();
@@ -344,6 +373,69 @@ async function resyncOrderToS3(request, env, user, orderId) {
   return json(request, env, { success: s3Result.success === true, orderId, s3Result, message: s3Result.error || (s3Result.skipped ? 'S3 chưa được bật trên server.' : undefined) }, s3Result.success ? 200 : s3Result.s3SyncStatus === 'needs_review' ? 409 : 503);
 }
 
+async function reissueInvoiceForOrder(request, env, user, orderId) {
+  assertStaffRole(user, ['super_admin', 'admin']);
+  const hasFirestore = isFirestoreConfigured(env);
+  let order = null;
+  if (hasFirestore) {
+    order = await getDocument(env, `orders/${orderId}`);
+  } else {
+    order = devOrdersStore.get(orderId);
+  }
+  if (!order) throw new ApiError(404, 'order_not_found', 'Không tìm thấy đơn hàng.');
+  if (String(order.status || '').toLowerCase() !== 'completed') {
+    throw new ApiError(409, 'order_not_completed', 'Chỉ có thể xuất hoá đơn cho đơn hàng đã hoàn tất.');
+  }
+  if (order.s3InvoiceStatus === 'issued') {
+    return json(request, env, { success: true, orderId, alreadyInvoiced: true, s3InvoiceStatus: 'issued' });
+  }
+  if (getS3Config(env).enabled && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid') {
+    throw new ApiError(409, 'payment_not_confirmed', 'Đơn chuyển khoản chưa được xác nhận thanh toán. Hãy đánh dấu "Đã trả" trước khi xuất hoá đơn.');
+  }
+
+  const body = await request.json().catch(() => ({}));
+  // The outbox blocks re-sending an ambiguous invoice on purpose: if S3 already saved it,
+  // a second call would deduct stock twice. An admin must confirm they checked S3 first.
+  const reconcileConfirmed = body.reconcileConfirmed === true;
+  const result = await dispatchInvoiceS3({ orderId, order, env, timeoutMs: 20000, force: reconcileConfirmed });
+
+  const invoiceFields = {
+    ...(result.success ? {
+      s3InvoiceStatus: 'issued',
+      s3InvoicedAt: result.issuedAt || new Date().toISOString(),
+      ...(result.s3InvoiceRequestId ? { s3InvoiceRequestId: result.s3InvoiceRequestId } : {})
+    } : result.skipped ? { s3InvoiceStatus: 'disabled' } : {
+      s3InvoiceStatus: result.s3InvoiceStatus || 'needs_review',
+      s3InvoiceError: result.error || 'Không rõ kết quả S3'
+    }),
+    updatedAt: new Date()
+  };
+
+  if (hasFirestore) {
+    await commitWrites(env, [
+      updateWrite(env, `orders/${orderId}`, invoiceFields, Object.keys(invoiceFields))
+    ]);
+  } else {
+    Object.assign(order, invoiceFields);
+  }
+
+  await logAuditEvent(env, {
+    actor: user,
+    action: 'order_invoice_retry',
+    resource: 'orders',
+    resourceId: orderId,
+    details: { success: result.success === true, reconcileConfirmed, s3InvoiceStatus: invoiceFields.s3InvoiceStatus, error: result.error || null },
+    request
+  });
+
+  return json(request, env, {
+    success: result.success === true,
+    orderId,
+    s3InvoiceResult: result,
+    message: result.error || (result.skipped ? 'S3 chưa được bật trên server.' : undefined)
+  }, result.success ? 200 : result.s3InvoiceStatus === 'disabled' ? 200 : 409);
+}
+
 
 export const VALID_ROLES = [
   'super_admin',
@@ -421,10 +513,114 @@ const VALID_ORDER_TRANSITIONS = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['shipping', 'cancelled'],
   shipping: ['completed', 'returned', 'cancelled'],
-  completed: [],
+  // A delivered order has already had its S3 invoice raised, and an invoice only exists
+  // once the order is completed. Leaving completed terminal therefore made a real return
+  // impossible: the customer sends goods back but the order could never leave completed,
+  // so s3RestockRequired was never written and branch stock stayed deducted forever.
+  // Returns and cancellations are allowed here on purpose; the restock block below turns
+  // them into a recorded obligation.
+  completed: ['returned', 'cancelled'],
   returned: [],
   cancelled: []
 };
+
+// Payment status is money, so it must not be writable straight from the browser: a direct
+// Firestore update leaves no trace of who marked an order paid, and S3 -- which reads
+// `paymentStatus` to fill Invoice.CustomerReceived -- never learns about corrections made
+// after the invoice was raised. This endpoint is the single write path: it validates the
+// value, records an audit entry, and flags the S3 reconciliation the invoice can no longer
+// perform on its own.
+const VALID_PAYMENT_STATUSES = ['unpaid', 'pending_transfer', 'paid', 'refunded'];
+
+async function updateOrderPaymentStatus(request, env, user, orderId) {
+  assertStaffRole(user, ['admin', 'sales']);
+  const hasFirestore = isFirestoreConfigured(env);
+  let order = null;
+  if (hasFirestore) {
+    order = await getDocument(env, `orders/${orderId}`);
+  } else {
+    order = devOrdersStore.get(orderId);
+  }
+  if (!order) throw new ApiError(404, 'order_not_found', 'Không tìm thấy đơn hàng.');
+
+  const body = await request.json().catch(() => ({}));
+  const targetStatus = text(body.paymentStatus, 'trạng thái thanh toán', 40).toLowerCase();
+  const note = String(body.note || '').trim().slice(0, 500);
+  if (!VALID_PAYMENT_STATUSES.includes(targetStatus)) {
+    throw new ApiError(
+      400,
+      'invalid_payment_status',
+      `Trạng thái thanh toán "${targetStatus}" không hợp lệ. Các giá trị hợp lệ: ${VALID_PAYMENT_STATUSES.join(', ')}.`
+    );
+  }
+
+  const currentStatus = String(order.paymentStatus || 'unpaid').toLowerCase();
+  // Money is also irreversible in practice: refunding an order nobody paid would let the
+  // dashboard show "đã hoàn tiền" for revenue that never existed.
+  if (targetStatus === 'refunded' && currentStatus !== 'paid') {
+    throw new ApiError(
+      409,
+      'refund_without_payment',
+      'Chỉ có thể hoàn tiền cho đơn đã được đánh dấu "Đã trả". Hãy xác nhận thanh toán trước khi hoàn tiền.'
+    );
+  }
+
+  const now = new Date();
+  const paymentHistory = Array.isArray(order.paymentHistory)
+    ? [...order.paymentHistory, {
+        from: currentStatus,
+        to: targetStatus,
+        changedBy: user.email || user.sub,
+        note,
+        timestamp: now.toISOString()
+      }]
+    : [{ from: currentStatus, to: targetStatus, changedBy: user.email || user.sub, note, timestamp: now.toISOString() }];
+
+  const updateFields = {
+    paymentStatus: targetStatus,
+    paymentHistory,
+    updatedAt: now.toISOString()
+  };
+
+  // The S3 invoice froze CustomerReceived at the moment it was raised, so a later payment
+  // correction can no longer be pushed through the invoice. Record the debt instead of
+  // letting S3 keep believing the order was unpaid (or paid when it was not).
+  const s3ReconcileRequired = order.s3InvoiceStatus === 'issued' && currentStatus !== targetStatus;
+  if (s3ReconcileRequired) {
+    updateFields.s3PaymentReconcileRequired = true;
+    updateFields.s3PaymentReconcileFrom = currentStatus;
+    updateFields.s3PaymentReconcileTo = targetStatus;
+    console.warn(
+      `[S3 Payment Reconcile Required] Order #${orderId}: ${currentStatus} → ${targetStatus} sau khi hoá đơn đã xuất; cần đối soát CustomerReceived trên S3 (${getS3Config(env).branchId}).`
+    );
+  }
+
+  if (hasFirestore) {
+    await commitWrites(env, [
+      updateWrite(env, `orders/${orderId}`, updateFields, Object.keys(updateFields))
+    ]);
+  } else {
+    Object.assign(order, updateFields);
+  }
+
+  await logAuditEvent(env, {
+    actor: user,
+    action: 'order_payment_status',
+    resource: 'orders',
+    resourceId: orderId,
+    details: { fromStatus: currentStatus, toStatus: targetStatus, note, s3ReconcileRequired },
+    request
+  });
+
+  return json(request, env, {
+    success: true,
+    orderId,
+    previousPaymentStatus: currentStatus,
+    paymentStatus: targetStatus,
+    paymentHistory,
+    s3ReconcileRequired
+  });
+}
 
 async function transitionOrderStatus(request, env, user, orderId) {
   assertStaffRole(user, ['super_admin', 'admin', 'sales', 'warehouse']);
@@ -470,12 +666,23 @@ async function transitionOrderStatus(request, env, user, orderId) {
   // Delivered: raise the sales invoice so S3 deducts stock exactly once.
   let s3InvoiceResult = null;
   if (targetStatus === 'completed' && order.s3InvoiceStatus !== 'issued') {
+    // Bank transfers must be reconciled before the invoice deducts stock, otherwise S3
+    // records revenue for money that may never arrive. Skipped when S3 is disabled.
+    if (getS3Config(env).enabled && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid') {
+      throw new ApiError(
+        409,
+        'payment_not_confirmed',
+        'Đơn chuyển khoản chưa được xác nhận thanh toán. Hãy đánh dấu "Đã trả" trước khi hoàn tất để xuất hoá đơn và trừ kho trên S3.'
+      );
+    }
     try {
-      const res = await issueInvoiceToS3({ orderId, order: { ...order, status: targetStatus }, env, timeoutMs: 20000 });
+      const res = await dispatchInvoiceS3({ orderId, order: { ...order, status: targetStatus }, env, timeoutMs: 20000 });
       if (res.success) {
         updateFields.s3InvoiceStatus = 'issued';
         updateFields.s3InvoiceRequestId = res.s3InvoiceRequestId;
-        updateFields.s3InvoicedAt = res.issuedAt;
+        updateFields.s3InvoicedAt = res.issuedAt || new Date().toISOString();
+      } else if (res.skipped) {
+        updateFields.s3InvoiceStatus = 'disabled';
       } else {
         updateFields.s3InvoiceStatus = res.s3InvoiceStatus || 'needs_review';
         updateFields.s3InvoiceError = res.error || res.reason || 'Không rõ kết quả S3';
@@ -485,6 +692,23 @@ async function transitionOrderStatus(request, env, user, orderId) {
       updateFields.s3InvoiceStatus = 'needs_review';
       updateFields.s3InvoiceError = invoiceErr.message;
       console.warn('[Worker Transition S3 Invoice Warning]', invoiceErr.message);
+    }
+  }
+
+  // A delivered order that was invoiced has already deducted stock inside S3, and the
+  // documented API has no way to give it back (no stock-adjustment and no invoice-cancel
+  // endpoint). Record the obligation here so a human posts the return on S3 instead of
+  // the stock quietly disappearing until the next stock take.
+  if (['cancelled', 'returned'].includes(targetStatus) && order.s3InvoiceStatus === 'issued') {
+    const restockLines = buildRestockLines(order);
+    if (restockLines.length) {
+      updateFields.s3RestockRequired = true;
+      updateFields.s3RestockLines = restockLines;
+      updateFields.s3RestockRequestedAt = now.toISOString();
+      updateFields.s3RestockReason = targetStatus;
+      console.warn(
+        `[S3 Restock Required] Order #${orderId} ${targetStatus}: hoàn ${restockLines.map(l => `${l.name} x${l.quantity}`).join(', ')} trên S3 (${getS3Config(env).branchId}).`
+      );
     }
   }
 
@@ -530,7 +754,9 @@ async function transitionOrderStatus(request, env, user, orderId) {
     status: targetStatus,
     statusHistory,
     s3SyncResult,
-    s3InvoiceResult
+    s3InvoiceResult,
+    restockRequired: updateFields.s3RestockRequired === true,
+    ...(updateFields.s3RestockLines ? { restockLines: updateFields.s3RestockLines } : {})
   });
 }
 
@@ -1014,8 +1240,14 @@ async function handleApi(request, env) {
   if (request.method === 'POST' && url.pathname === '/api/orders') return createOrder(request, env, user);
   const s3ResyncMatch = url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/resync-s3$/);
   if (request.method === 'POST' && s3ResyncMatch) return resyncOrderToS3(request, env, user, decodeURIComponent(s3ResyncMatch[1]));
+  const invoiceRetryMatch = url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/issue-invoice$/);
+  if (request.method === 'POST' && invoiceRetryMatch) return reissueInvoiceForOrder(request, env, user, decodeURIComponent(invoiceRetryMatch[1]));
   const transitionMatch = url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/transition$/);
   if (request.method === 'POST' && transitionMatch) return transitionOrderStatus(request, env, user, decodeURIComponent(transitionMatch[1]));
+  // Money writes go through the worker so they are validated and audited; the browser no
+  // longer touches `paymentStatus` in Firestore directly.
+  const paymentMatch = url.pathname.match(/^\/api\/admin\/orders\/([^/]+)\/payment$/);
+  if (request.method === 'POST' && paymentMatch) return updateOrderPaymentStatus(request, env, user, decodeURIComponent(paymentMatch[1]));
   const orderMatch = url.pathname.match(/^\/api\/orders\/([^/]+)$/);
   if (request.method === 'PATCH' && orderMatch) return cancelOrder(request, env, user, decodeURIComponent(orderMatch[1]));
   if (request.method === 'POST' && url.pathname === '/api/analyze-skin') return analyzeSkin(request, env, user);

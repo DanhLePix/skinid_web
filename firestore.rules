@@ -154,9 +154,20 @@ service cloud.firestore {
 
       // Financial snapshots can only change through trusted server workflows.
       // Customer can ONLY cancel a pending/confirmed order.
+      //
+      // paymentStatus and the S3 sync/invoice/restock bookkeeping are server-owned as well:
+      // they are money and reconciliation state, so they must go through the worker
+      // (POST /api/admin/orders/:id/payment and /transition) where they are validated and
+      // written to auditLogs. Letting a browser write them directly produced payments with
+      // no audit trail and S3 invoices whose CustomerReceived silently disagreed.
       allow update: if request.auth != null && (
         (isAdmin() && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'userId', 'items', 'subtotal', 'discountAmount', 'couponCode', 'shippingFee', 'total', 'createdAt', 'id'
+          'userId', 'items', 'subtotal', 'discountAmount', 'couponCode', 'shippingFee', 'total', 'createdAt', 'id',
+          'paymentStatus', 'paymentHistory',
+          's3SyncStatus', 's3OrderId', 's3SyncedAt', 's3Error',
+          's3InvoiceStatus', 's3InvoiceRequestId', 's3InvoiceError', 's3InvoicedAt',
+          's3RestockRequired', 's3RestockLines', 's3RestockReason', 's3RestockRequestedAt',
+          's3PaymentReconcileRequired', 's3PaymentReconcileFrom', 's3PaymentReconcileTo'
         ])) ||
         (
           resource.data.userId == request.auth.uid &&

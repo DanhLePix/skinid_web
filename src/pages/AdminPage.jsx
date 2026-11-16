@@ -11,6 +11,7 @@ import {
   fetchAdminBlogPosts,
   fetchAdminPromotions,
   resyncAdminOrderToS3,
+  issueAdminOrderInvoice,
   saveAdminBlogPost,
   saveAdminCampaign,
   saveAdminProduct,
@@ -18,6 +19,7 @@ import {
   saveAdminVoucher,
   syncAllPendingOrdersToS3,
   updateAdminOrder,
+  updateAdminOrderPayment,
   updateUserRole,
   useAdmin,
   useAdminIdleTimeout,
@@ -107,8 +109,49 @@ const ORDER_STATUSES = [
   { value: 'confirmed', label: 'Đã xác nhận', color: 'bg-blue-50 text-blue-800 border-blue-200/80', dot: 'bg-blue-500' },
   { value: 'shipping', label: 'Đang giao hàng', color: 'bg-indigo-50 text-indigo-800 border-indigo-200/80', dot: 'bg-indigo-500' },
   { value: 'completed', label: 'Hoàn thành', color: 'bg-emerald-50 text-emerald-800 border-emerald-200/80', dot: 'bg-emerald-500' },
+  // 'returned' must stay in this list: it is the only way to record a customer return,
+  // and it is what makes the worker write s3RestockRequired for an already-invoiced order.
+  // Without it the restock obligation can never be created from the admin screen.
+  { value: 'returned', label: 'Khách trả hàng', color: 'bg-orange-50 text-orange-800 border-orange-200/80', dot: 'bg-orange-500' },
   { value: 'cancelled', label: 'Đã hủy', color: 'bg-slate-100 text-slate-600 border-slate-200/80', dot: 'bg-slate-400' }
 ];
+
+// Mirrors PAYMENT_STATUS in src/features/admin/v2/lib/orderStatus.js and the values the
+// worker writes on order creation (worker/index.js: paymentStatus = 'pending_transfer'
+// for bank_transfer). Omitting pending_transfer leaves the select with no matching option,
+// so a bank-transfer order shows a blank box instead of "Chờ chuyển khoản".
+const PAYMENT_STATUSES = [
+  { value: 'unpaid', label: 'Chưa trả' },
+  { value: 'pending_transfer', label: 'Chờ chuyển khoản' },
+  { value: 'paid', label: 'Đã trả' },
+  { value: 'refunded', label: 'Hoàn tiền' }
+];
+
+// Mirrors VALID_ORDER_TRANSITIONS in worker/index.js exactly. The worker rejects anything
+// not listed here with 409 invalid_transition, so offering the full list would let an admin
+// pick a move that always fails. returned/cancelled are true terminal states; completed is
+// not, because an invoiced order must still be reversible.
+const ORDER_STATUS_TRANSITIONS = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['shipping', 'cancelled'],
+  shipping: ['completed', 'returned', 'cancelled'],
+  // A completed order carries the S3 invoice, so it must stay reversible: a customer can
+  // still return the goods, and only 'returned'/'cancelled' trigger the restock obligation.
+  completed: ['returned', 'cancelled'],
+  returned: [],
+  cancelled: []
+};
+
+function allowedOrderStatusTargets(currentStatus) {
+  const current = String(currentStatus || 'pending').toLowerCase();
+  const targets = ORDER_STATUS_TRANSITIONS[current];
+  // An unknown status (legacy data) falls back to the full list rather than trapping the
+  // admin in a read-only cell, and the worker still enforces its own rules.
+  if (!targets) return ORDER_STATUSES;
+  return ORDER_STATUSES.filter(
+    (status) => status.value === current || targets.includes(status.value)
+  );
+}
 
 const ROLE_DEFINITIONS = {
   super_admin: {
@@ -2700,10 +2743,26 @@ export default function AdminPage() {
     setFlash('');
     setActionError('');
     try {
-      await Promise.all(selectedOrderIds.map(id => updateAdminOrder(id, { status: newStatus })));
+      const results = await Promise.all(selectedOrderIds.map(id => updateAdminOrder(id, { status: newStatus })));
       const count = selectedOrderIds.length;
+      // Bulk return/cancel writes the same restock obligation as the per-row control, so it
+      // has to be surfaced here too — otherwise a batch of returns silently leaves stock
+      // deducted on S3 with nobody told to correct it.
+      const restockLines = [];
+      for (const result of results) {
+        if (result?.restockRequired) restockLines.push(...(result.restockLines || []));
+      }
       setSelectedOrderIds([]);
       await finish(`Đã cập nhật trạng thái ${count} đơn hàng sang "${ORDER_STATUSES.find(s => s.value === newStatus)?.label || newStatus}".`);
+      if (restockLines.length) {
+        const summary = restockLines
+          .map((line) => `${line.name || line.s3ProductId} ×${line.quantity}`)
+          .join(', ');
+        globalThis.alert(
+          `Có ${results.filter((r) => r?.restockRequired).length} đơn đã xuất hoá đơn S3 và cần hoàn kho thủ công.\n\n` +
+          `API S3 không có chức năng điều chỉnh tồn kho. Vui lòng hoàn kho trên S3 cho:\n${summary}`
+        );
+      }
     } catch (err) {
       setActionError(`Lỗi cập nhật hàng loạt: ${err.message}`);
     } finally {
@@ -2753,14 +2812,18 @@ export default function AdminPage() {
     setActionError('');
   };
 
+  // Returns false when the action threw, so callers that mirror the change into local UI
+  // state do not show a value the server rejected.
   const run = async (action, message) => {
     setFlash('');
     setActionError('');
     try {
       await action();
       await finish(message);
+      return true;
     } catch (err) {
       setActionError(err.message || 'Thao tác thất bại.');
+      return false;
     }
   };
 
@@ -2876,6 +2939,7 @@ export default function AdminPage() {
       else if (orderStatusFilter === 'confirmed') matchStatus = order.status === 'confirmed';
       else if (orderStatusFilter === 'shipping') matchStatus = order.status === 'shipping';
       else if (orderStatusFilter === 'completed') matchStatus = order.status === 'completed';
+      else if (orderStatusFilter === 'returned') matchStatus = order.status === 'returned';
       else if (orderStatusFilter === 'cancelled') matchStatus = order.status === 'cancelled';
       else if (orderStatusFilter === 'unpaid') matchStatus = order.paymentStatus === 'unpaid' || !order.paymentStatus;
       else if (orderStatusFilter === 'paid') matchStatus = order.paymentStatus === 'paid';
@@ -3464,6 +3528,8 @@ export default function AdminPage() {
                 { id: 'pending', label: `Chờ xử lý (${displayOrders.filter(o => o.status === 'pending').length})` },
                 { id: 'shipping', label: `Đang giao (${displayOrders.filter(o => o.status === 'shipping').length})` },
                 { id: 'completed', label: `Đã giao (${displayOrders.filter(o => o.status === 'completed').length})` },
+                // Without this tab, orders that were returned are only reachable via "Tất cả".
+                { id: 'returned', label: `Trả hàng (${displayOrders.filter(o => o.status === 'returned').length})` },
                 { id: 'cancelled', label: 'Đã hủy' }
               ].map((st) => (
                 <button
@@ -3556,7 +3622,10 @@ export default function AdminPage() {
                     className="px-3 py-2 bg-slate-800/90 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white outline-none cursor-pointer"
                   >
                     <option value="" disabled>Đổi trạng thái hàng loạt...</option>
-                    {ORDER_STATUSES.map(st => (
+                    {/* Bulk changes span orders in different states, so only statuses that are
+                        reachable from several states are offered. The worker still validates
+                        each order and rejects the ones it cannot move. */}
+                    {ORDER_STATUSES.filter((st) => ['confirmed', 'shipping', 'completed', 'cancelled'].includes(st.value)).map(st => (
                       <option key={st.value} value={st.value} className="bg-slate-900 text-white">{st.label}</option>
                     ))}
                   </select>
@@ -3660,30 +3729,67 @@ export default function AdminPage() {
                             <select
                               value={order.paymentStatus || 'unpaid'}
                               disabled={!isAdmin && !effectiveIsAdmin}
-                              onChange={(e) => run(() => updateAdminOrder(order.id, { paymentStatus: e.target.value }), 'Đã cập nhật trạng thái thanh toán.')}
+                              onChange={(e) => {
+                                const nextPaymentStatus = e.target.value;
+                                run(async () => {
+                                  const result = await updateAdminOrderPayment(order.id, nextPaymentStatus);
+                                  // S3 froze CustomerReceived when the invoice was raised, so a later
+                                  // correction can only be settled by hand on the POS.
+                                  if (result?.s3ReconcileRequired) {
+                                    globalThis.alert(
+                                      `Đã cập nhật thanh toán sang "${PAYMENT_STATUSES.find((p) => p.value === nextPaymentStatus)?.label || nextPaymentStatus}".\n\n` +
+                                      'Hoá đơn S3 đã xuất trước đó nên số tiền khách đã trả (CustomerReceived) trên S3 không tự cập nhật. ' +
+                                      'Vui lòng đối soát và điều chỉnh công nợ trên S3.'
+                                    );
+                                  }
+                                }, 'Đã cập nhật trạng thái thanh toán.');
+                              }}
                               className={`w-full px-2 py-1.5 rounded-xl text-[11px] font-bold border outline-none cursor-pointer transition shadow-2xs ${
                                 order.paymentStatus === 'paid'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
                                   : order.paymentStatus === 'refunded'
                                   ? 'bg-purple-50 text-purple-800 border-purple-200/80'
+                                  : order.paymentStatus === 'pending_transfer'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200/80'
                                   : 'bg-amber-50 text-amber-800 border-amber-200/80'
                               }`}
                             >
-                              <option value="unpaid">Chưa trả</option>
-                              <option value="paid">Đã trả</option>
-                              <option value="refunded">Hoàn tiền</option>
+                              {PAYMENT_STATUSES.map((ps) => (
+                                <option key={ps.value} value={ps.value}>{ps.label}</option>
+                              ))}
                             </select>
                           </td>
                           <td className="py-3.5 px-3">
                             <select
                               value={order.status || 'pending'}
                               disabled={!isAdmin && !isStaff && !effectiveIsAdmin}
-                              onChange={(e) => run(() => updateAdminOrder(order.id, { status: e.target.value }), 'Đã cập nhật trạng thái đơn hàng.')}
+                              onChange={(e) => {
+                                const nextStatus = e.target.value;
+                                run(async () => {
+                                  const result = await updateAdminOrder(order.id, { status: nextStatus });
+                                  // The worker records the restock obligation instead of moving stock
+                                  // in S3 (the API has no stock-adjustment endpoint), so the admin
+                                  // must be told to do it by hand — otherwise the deduction happens
+                                  // silently and surfaces only at the next stock take.
+                                  if (result?.restockRequired) {
+                                    const lines = (result.restockLines || [])
+                                      .map((line) => `${line.name || line.s3ProductId} ×${line.quantity}`)
+                                      .join(', ');
+                                    globalThis.alert(
+                                      `Đơn đã chuyển sang "${ORDER_STATUSES.find((s) => s.value === nextStatus)?.label || nextStatus}".\n\n` +
+                                      `Hoá đơn S3 đã trừ kho nhưng API S3 không có chức năng điều chỉnh tồn kho. ` +
+                                      `Vui lòng hoàn kho thủ công trên S3 cho các sản phẩm sau:\n${lines || '(không xác định được sản phẩm)'}`
+                                    );
+                                  }
+                                }, 'Đã cập nhật trạng thái đơn hàng.');
+                              }}
                               className={`w-full px-2 py-1.5 rounded-xl text-[11px] font-bold border outline-none cursor-pointer transition shadow-2xs ${
                                 (ORDER_STATUSES.find((s) => s.value === order.status) || ORDER_STATUSES[0]).color
                               }`}
                             >
-                              {ORDER_STATUSES.map((st) => (
+                              {/* Only transitions the worker accepts are offered; anything else
+                                  answers 409 invalid_transition. */}
+                              {allowedOrderStatusTargets(order.status).map((st) => (
                                 <option key={st.value} value={st.value}>{st.label}</option>
                               ))}
                             </select>
@@ -3693,7 +3799,7 @@ export default function AdminPage() {
                               {order.s3SyncStatus === 'synced' ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-bold text-[10px] shadow-2xs">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                  S3: #{String(order.s3OrderId || 'OK').slice(-8)}
+                                  {order.s3OrderId ? `S3: #${String(order.s3OrderId).slice(-8)}` : 'S3: đã đồng bộ'}
                                 </span>
                               ) : order.s3SyncStatus === 'failed' ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 font-bold text-[10px] shadow-2xs" title={order.s3SyncError}>
@@ -3721,7 +3827,32 @@ export default function AdminPage() {
                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                   Hoá đơn: chưa xuất
                                 </span>
+                              ) : order.status === 'shipping' ? (
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-bold text-[10px] shadow-2xs ${
+                                    !order.s3InvoiceStatus && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200/80'
+                                      : 'bg-slate-50 text-slate-500 border-slate-200/80'
+                                  }`}
+                                  title={!order.s3InvoiceStatus && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid'
+                                    ? 'Chuyển khoản chưa xác nhận thanh toán: không thể hoàn tất đơn cho đến khi đánh dấu "Đã trả".'
+                                    : 'Hoá đơn S3 được xuất (và trừ kho) khi đơn chuyển sang Hoàn tất.'}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${!order.s3InvoiceStatus && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid' ? 'bg-amber-500' : 'bg-slate-300'}`}></span>
+                                  {!order.s3InvoiceStatus && order.paymentMethod === 'bank_transfer' && order.paymentStatus !== 'paid'
+                                    ? 'Hoá đơn: chờ xác nhận thanh toán'
+                                    : 'Hoá đơn: xuất khi hoàn tất'}
+                                </span>
                               ) : null}
+                              {order.s3RestockRequired && (
+                                <span
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 text-orange-800 border border-orange-200/80 font-bold text-[10px] shadow-2xs"
+                                  title={`Hoá đơn đã trừ kho trên S3 nhưng đơn bị ${order.s3RestockReason === 'returned' ? 'trả hàng' : 'huỷ'}. API S3 không có chức năng điều chỉnh tồn kho nên phải hoàn kho thủ công trên S3: ${(order.s3RestockLines || []).map(line => `${line.name} x${line.quantity}`).join(', ')}`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                                  Cần hoàn kho trên S3
+                                </span>
+                              )}
                               {effectiveIsAdmin && (
                                 <button
                                   type="button"
@@ -3729,6 +3860,28 @@ export default function AdminPage() {
                                   className="text-[10px] text-slate-400 hover:text-slate-900 underline transition cursor-pointer font-medium"
                                 >
                                   ↻ Đồng bộ lại
+                                </button>
+                              )}
+                              {effectiveIsAdmin && order.status === 'completed' && order.s3InvoiceStatus !== 'issued' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Re-issuing an invoice deducts stock, so a still-ambiguous
+                                    // outcome requires the admin to confirm they already checked S3.
+                                    // Otherwise the worker keeps its outbox lock and answers 409.
+                                    const reconcileConfirmed = order.s3InvoiceStatus === 'needs_review'
+                                      ? globalThis.confirm('Bạn đã kiểm tra trên S3 và chắc chắn hoá đơn CHƯA được lưu? Xuất lại sẽ trừ kho thêm một lần.')
+                                      : false;
+                                    if (order.s3InvoiceStatus === 'needs_review' && !reconcileConfirmed) return;
+                                    run(
+                                      () => issueAdminOrderInvoice(order, { reconcileConfirmed }),
+                                      `Đã xuất hoá đơn S3 cho đơn #${order.id.slice(0, 8)}.`
+                                    );
+                                  }}
+                                  className="text-[10px] text-[#BD3F5B] hover:text-[#8f2f45] underline transition cursor-pointer font-semibold"
+                                  title={order.s3InvoiceError || 'Xuất hoá đơn (trừ kho) trên S3 POS'}
+                                >
+                                  ↻ Xuất hoá đơn lại
                                 </button>
                               )}
                             </div>
@@ -6102,8 +6255,20 @@ export default function AdminPage() {
           order={timelineOrder}
           onClose={() => setTimelineOrder(null)}
           onUpdateStatus={async (orderId, changes) => {
-            await run(() => updateAdminOrder(orderId, changes), 'Đã cập nhật đơn hàng.');
-            setTimelineOrder((prev) => (prev ? { ...prev, ...changes } : null));
+            const ok = await run(() => updateAdminOrder(orderId, changes), 'Đã cập nhật đơn hàng.');
+            if (ok) setTimelineOrder((prev) => (prev ? { ...prev, ...changes } : null));
+          }}
+          onUpdatePaymentStatus={async (orderId, paymentStatus) => {
+            const ok = await run(async () => {
+              const result = await updateAdminOrderPayment(orderId, paymentStatus);
+              if (result?.s3ReconcileRequired) {
+                globalThis.alert(
+                  'Hoá đơn S3 đã xuất trước đó nên số tiền khách đã trả (CustomerReceived) trên S3 không tự cập nhật. ' +
+                  'Vui lòng đối soát và điều chỉnh công nợ trên S3.'
+                );
+              }
+            }, 'Đã cập nhật trạng thái thanh toán.');
+            if (ok) setTimelineOrder((prev) => (prev ? { ...prev, paymentStatus } : null));
           }}
           isAdmin={effectiveIsAdmin}
           isStaff={effectiveIsStaff}

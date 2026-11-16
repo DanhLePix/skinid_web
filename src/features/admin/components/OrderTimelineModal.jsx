@@ -7,6 +7,20 @@ import {
 } from '../services/operationsService.js';
 import { IconClose, IconPhone, IconCheck, IconAlert } from './AdminIcons.jsx';
 
+// Kept in sync with PAYMENT_STATUSES in AdminPage.jsx and the worker's
+// VALID_PAYMENT_STATUSES. "pending_transfer" exists because the worker sets it on creation
+// for bank transfers; showing only paid/unpaid made those orders read as "COD".
+const PAYMENT_STATUS_OPTIONS = [
+  { value: 'unpaid', label: 'Chưa trả' },
+  { value: 'pending_transfer', label: 'Chờ chuyển khoản' },
+  { value: 'paid', label: 'Đã trả' },
+  { value: 'refunded', label: 'Hoàn tiền' }
+];
+
+const PAYMENT_STATUS_LABELS = Object.fromEntries(
+  PAYMENT_STATUS_OPTIONS.map((option) => [option.value, option.label])
+);
+
 export default function OrderTimelineModal({
   order,
   onClose,
@@ -126,18 +140,45 @@ export default function OrderTimelineModal({
                 <span>Tổng tiền:</span>
                 <span className="font-bold font-mono text-slate-900 text-sm">{money(order.total)}</span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span>Trạng thái tiền:</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                  order.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {order.paymentStatus === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán (COD)'}
-                </span>
+                {typeof onUpdatePaymentStatus === 'function' ? (
+                  <select
+                    value={order.paymentStatus || 'unpaid'}
+                    onChange={(e) => onUpdatePaymentStatus(order.id, e.target.value)}
+                    className={`px-2 py-0.5 rounded-full font-bold text-[10px] border outline-none cursor-pointer ${
+                      order.paymentStatus === 'paid'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : order.paymentStatus === 'refunded'
+                        ? 'bg-purple-100 text-purple-800 border-purple-200'
+                        : order.paymentStatus === 'pending_transfer'
+                        ? 'bg-blue-100 text-blue-800 border-blue-200'
+                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {PAYMENT_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                    order.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {PAYMENT_STATUS_LABELS[order.paymentStatus] || 'Chưa thanh toán'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <span>S3 POS:</span>
                 <span className="font-bold font-mono text-slate-700">
-                  {order.s3SyncStatus === 'synced' ? `Đã đồng bộ (#${String(order.s3OrderId || '').slice(-6)})` : 'Chưa đồng bộ'}
+                  {order.s3SyncStatus === 'synced' ? (
+                    // AddNewPreOrder/v2 returns no PreOrderID, so an order can be synced
+                    // without any S3 reference. Showing "#undefined" or a fabricated code
+                    // would be worse than saying the reference is unknown.
+                    order.s3OrderId
+                      ? `Đã đồng bộ (#${String(order.s3OrderId).slice(-6)})`
+                      : 'Đã đồng bộ (S3 không trả mã)'
+                  ) : 'Chưa đồng bộ'}
                 </span>
               </div>
             </div>

@@ -24,19 +24,26 @@ export async function logAuditEvent({ action, module, targetId, targetName, acto
 // 1. ORDER STATE MACHINE & DELIVERY OPERATIONS
 // ===============================================================
 
+// Mirrors VALID_ORDER_TRANSITIONS in worker/index.js. This is the state machine the
+// OrderTimelineModal actually renders buttons from, so any divergence shows the admin a
+// button that the API rejects with 400 invalid_transition.
+//
+// It previously used a longer flow (confirmed→packing→shipping→delivered→completed plus
+// returned→refunded) that the worker has never accepted; `packing`, `delivered`,
+// `delivery_failed` and `refunded` exist only in reporting/legacy data. Because of that,
+// 'completed' must stay reversible: an invoiced order can still be returned or cancelled,
+// and those are the only transitions that create the S3 restock obligation.
 export const ORDER_STATUS_FLOW = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['packing', 'cancelled'],
-  packing: ['shipping', 'cancelled'],
-  shipping: ['delivered', 'delivery_failed'],
-  delivered: ['completed', 'returned'],
-  completed: [],
-  delivery_failed: ['shipping', 'returned', 'cancelled'],
-  returned: ['refunded'],
-  refunded: [],
+  confirmed: ['shipping', 'cancelled'],
+  shipping: ['completed', 'returned', 'cancelled'],
+  completed: ['returned', 'cancelled'],
+  returned: [],
   cancelled: []
 };
 
+// Labels cover both the canonical worker statuses and the legacy names still present in
+// older orders/reports, so historical rows render readable text instead of a raw slug.
 export const ORDER_STATUS_LABELS = {
   pending: 'Chờ xác nhận',
   confirmed: 'Đã xác nhận',

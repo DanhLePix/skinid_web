@@ -167,16 +167,38 @@ export async function saveAdminProduct(existingId, values) {
 export async function updateAdminOrder(orderId, changes) {
   const { doc, getDoc, serverTimestamp, updateDoc } = sdk.firestore;
   const reference = doc(db, 'orders', orderId);
-  const { status, ...fields } = changes;
+  const { status, paymentStatus, ...fields } = changes;
+  // Silently dropping paymentStatus here would make the UI look like it saved while the
+  // order stayed unpaid. Fail loudly so the caller uses updateAdminOrderPayment instead.
+  if (paymentStatus !== undefined) {
+    throw new Error('Trạng thái thanh toán phải được cập nhật qua updateAdminOrderPayment để có audit log và đối soát S3.');
+  }
+  let transitionResult = null;
   if (status) {
     const snapshot = await getDoc(reference);
     if (snapshot.data()?.status !== status) {
-      await apiRequest(`/admin/orders/${encodeURIComponent(orderId)}/transition`, {
+      transitionResult = await apiRequest(`/admin/orders/${encodeURIComponent(orderId)}/transition`, {
         method: 'POST', body: JSON.stringify({ targetStatus: status, note: changes.note || '' })
       });
     }
   }
   if (Object.keys(fields).length) await updateDoc(reference, { ...fields, updatedAt: serverTimestamp() });
+  // The worker answers with the restock obligation it just recorded, so the caller can tell
+  // the admin that S3 stock must be corrected by hand instead of dropping that information.
+  return transitionResult;
+}
+
+/**
+ * Payment status is money: it must not be written straight into Firestore, because that
+ * leaves no audit trail and S3 keeps the CustomerReceived value frozen on the invoice it
+ * already raised. This always goes through the worker endpoint.
+ */
+export async function updateAdminOrderPayment(orderId, paymentStatus, note = '') {
+  if (!orderId || !paymentStatus) throw new Error('Mã đơn hàng và trạng thái thanh toán là bắt buộc.');
+  return apiRequest(`/admin/orders/${encodeURIComponent(orderId)}/payment`, {
+    method: 'POST',
+    body: JSON.stringify({ paymentStatus, note })
+  });
 }
 
 export async function deleteAdminProduct(productId) {
@@ -205,6 +227,18 @@ export async function resyncAdminOrderToS3(orderOrId) {
   const orderId = order ? order.id : String(orderOrId || '');
   if (!orderId) throw new Error('Mã đơn hàng không hợp lệ.');
   return apiRequest(`/admin/orders/${encodeURIComponent(orderId)}/resync-s3`, { method: 'POST' });
+}
+
+// Retrying an invoice only deducts stock once: the worker keeps a durable outbox lock per
+// order, so an ambiguous outcome stays blocked until an admin confirms they reconciled S3.
+export async function issueAdminOrderInvoice(orderOrId, { reconcileConfirmed = false } = {}) {
+  const order = typeof orderOrId === 'object' && orderOrId !== null ? orderOrId : null;
+  const orderId = order ? order.id : String(orderOrId || '');
+  if (!orderId) throw new Error('Mã đơn hàng không hợp lệ.');
+  return apiRequest(`/admin/orders/${encodeURIComponent(orderId)}/issue-invoice`, {
+    method: 'POST',
+    body: JSON.stringify({ reconcileConfirmed })
+  });
 }
 
 export async function syncAllPendingOrdersToS3(orders = []) {

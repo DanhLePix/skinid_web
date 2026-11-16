@@ -11,6 +11,8 @@ HTTP client: `src/infrastructure/http/apiClient.js`, mặc định `/api`, gửi
 | `POST /orders` | Tạo đơn, tính lại tiền, idempotency header |
 | `PATCH /orders/:id` | Hủy đơn theo chủ sở hữu và trạng thái |
 | `POST /admin/orders/:id/transition` | Chuyển trạng thái có kiểm tra vòng đời và audit |
+| `POST /admin/orders/:id/issue-invoice` | Xuất lại hoá đơn S3 cho đơn đã hoàn tất (chống xuất trùng) |
+| `POST /admin/orders/:id/payment` | Cập nhật `paymentStatus` có kiểm tra giá trị, ghi `paymentHistory` + audit, cờ đối soát S3 |
 | `POST /admin/orders/:id/resync-s3` | Gửi lại POS có kiểm quyền/khóa chống trùng |
 | `POST /analyze-skin` | Phân tích ảnh, cần cấu hình Gemini |
 | `GET /admin/staff` | Danh sách nhân sự |
@@ -21,6 +23,8 @@ HTTP client: `src/infrastructure/http/apiClient.js`, mặc định `/api`, gửi
 | `POST /admin/integrations/check` | Probe Firebase hoặc S3 từ server, không tạo đơn |
 
 Payload xem trực tiếp service/frontend và handler server. UI quản trị trạng thái đơn dùng route transition; lưu hồ sơ/CMS/catalog vẫn có phần Firestore trực tiếp theo rules. Chỉ đổi URL không chuyển được các phần này sang database khác.
+
+`paymentStatus`, `paymentHistory` và toàn bộ trường S3 (`s3SyncStatus`, `s3InvoiceStatus`, `s3Restock*`, `s3PaymentReconcile*`) là trạng thái do server sở hữu: `firestore.rules` chặn client ghi thẳng, nên mọi thay đổi phải qua `POST /admin/orders/:id/payment` hoặc `/transition` để có audit log và cờ đối soát.
 
 ## Ranh giới khi chuyển server sau này
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ORDER_STATUS_FLOW,
+  ORDER_STATUS_LABELS,
   canTransitionOrderStatus,
   validateStatusTransition,
   generateDeliveryNoteHtml,
@@ -15,25 +16,35 @@ import {
 } from '../src/features/admin/services/operationsService.js';
 
 test('GD5: Order State Machine - Quản lý vòng đời đơn hàng & Chặn nhảy cóc', () => {
-  // 1. Luồng chuyển trạng thái hợp lệ
+  // 1. Luồng chuyển trạng thái hợp lệ — phải khớp VALID_ORDER_TRANSITIONS của worker,
+  // vì đây là map mà OrderTimelineModal render nút bấm từ đó.
   assert.equal(canTransitionOrderStatus('pending', 'confirmed'), true);
-  assert.equal(canTransitionOrderStatus('confirmed', 'packing'), true);
-  assert.equal(canTransitionOrderStatus('packing', 'shipping'), true);
-  assert.equal(canTransitionOrderStatus('shipping', 'delivered'), true);
-  assert.equal(canTransitionOrderStatus('delivered', 'completed'), true);
-  assert.equal(canTransitionOrderStatus('delivered', 'returned'), true);
-  assert.equal(canTransitionOrderStatus('returned', 'refunded'), true);
+  assert.equal(canTransitionOrderStatus('confirmed', 'shipping'), true);
+  assert.equal(canTransitionOrderStatus('shipping', 'completed'), true);
+  assert.equal(canTransitionOrderStatus('shipping', 'returned'), true);
+  // Đơn đã xuất hoá đơn vẫn phải trả hàng/huỷ được, nếu không kho S3 đã trừ sẽ treo vĩnh viễn.
+  assert.equal(canTransitionOrderStatus('completed', 'returned'), true);
+  assert.equal(canTransitionOrderStatus('completed', 'cancelled'), true);
 
   // 2. Nhánh hủy hợp lệ
   assert.equal(canTransitionOrderStatus('pending', 'cancelled'), true);
   assert.equal(canTransitionOrderStatus('confirmed', 'cancelled'), true);
-  assert.equal(canTransitionOrderStatus('packing', 'cancelled'), true);
+  assert.equal(canTransitionOrderStatus('shipping', 'cancelled'), true);
 
   // 3. Chặn nhảy cóc bất hợp lệ
   assert.equal(canTransitionOrderStatus('pending', 'completed'), false);
   assert.equal(canTransitionOrderStatus('shipping', 'pending'), false);
   assert.equal(canTransitionOrderStatus('cancelled', 'completed'), false);
   assert.equal(canTransitionOrderStatus('completed', 'shipping'), false);
+
+  // 4. Trạng thái chỉ tồn tại trong dữ liệu cũ / báo cáo không được coi là bước đi hợp lệ,
+  // vì worker không hề chấp nhận chúng và sẽ trả 400 invalid_transition.
+  for (const legacy of ['packing', 'delivered', 'delivery_failed', 'refunded']) {
+    assert.equal(ORDER_STATUS_FLOW[legacy], undefined, `${legacy} không được là bước đi hợp lệ`);
+    assert.equal(canTransitionOrderStatus('confirmed', legacy), false);
+  }
+  // Nhưng vẫn phải có nhãn để bảng báo cáo hiển thị đơn cũ bằng tiếng Việt.
+  assert.equal(ORDER_STATUS_LABELS.delivered, 'Đã giao hàng');
 
   assert.throws(
     () => validateStatusTransition('pending', 'completed'),

@@ -87,6 +87,11 @@ function createWorkerContext(overrides = {}) {
     documentName: (_, path) => `projects/test/databases/(default)/documents/${path}`,
     json: (_, __, body, status = 200) => ({ body, status }),
     syncOrderToS3: async () => ({ success: true, s3OrderId: 'S3-MOCK-123', s3SyncStatus: 'synced' }),
+    // S3 stays off in these end-to-end scenarios; the stock guard is inert.
+    getS3Config: () => ({ enabled: false, branchId: 9099 }),
+    fetchS3Inventory: async () => null,
+    findStockShortages: () => [],
+    buildRestockLines: () => [],
     sendTelegramOrderNotification: async () => true,
     ...overrides
   };
@@ -252,18 +257,12 @@ test('GD6 - Kịch bản 4: Tạo voucher hàng loạt và kiểm soát lượt 
 test('GD6 - Kịch bản 5: Đơn hàng đi đủ vòng đời từ Pending đến Completed và luồng hủy đơn', () => {
   let status = 'pending';
 
-  // 1. Chuyển tuần tự hợp lệ
+  // 1. Chuyển tuần tự hợp lệ: đúng 6 trạng thái worker chấp nhận.
   assert.equal(canTransitionOrderStatus(status, 'confirmed'), true);
   status = 'confirmed';
 
-  assert.equal(canTransitionOrderStatus(status, 'packing'), true);
-  status = 'packing';
-
   assert.equal(canTransitionOrderStatus(status, 'shipping'), true);
   status = 'shipping';
-
-  assert.equal(canTransitionOrderStatus(status, 'delivered'), true);
-  status = 'delivered';
 
   assert.equal(canTransitionOrderStatus(status, 'completed'), true);
   status = 'completed';
@@ -271,6 +270,10 @@ test('GD6 - Kịch bản 5: Đơn hàng đi đủ vòng đời từ Pending đ�
   // 2. Từ completed không được phép nhảy ngược lại shipping hay pending
   assert.equal(canTransitionOrderStatus(status, 'shipping'), false);
   assert.equal(canTransitionOrderStatus(status, 'pending'), false);
+
+  // 2b. Nhưng phải trả hàng/huỷ được — đây là đường duy nhất sinh công nợ hoàn kho S3.
+  assert.equal(canTransitionOrderStatus(status, 'returned'), true);
+  assert.equal(canTransitionOrderStatus(status, 'cancelled'), true);
 
   // 3. Test luồng hủy đơn từ Pending
   let cancelTestStatus = 'pending';
