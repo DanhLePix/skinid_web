@@ -60,8 +60,13 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(bankPayload.PreOrder.TotalAmount, 2300000);
   assert.equal(bankPayload.PreOrder.InvoiceAmount, 2150000);
   assert.equal(bankPayload.PreOrder.CustomerReceived, 0);
-  assert.equal(bankPayload.PreOrder.PromotionDiscountAmount, 150000);
+  // S3 sums InvoiceDiscount and PromotionDiscountAmount, so the voucher must ride in
+  // exactly one of them or the customer is charged the discount twice.
   assert.equal(bankPayload.PreOrder.InvoiceDiscount, 150000);
+  assert.equal(bankPayload.PreOrder.PromotionDiscountAmount, 0);
+  assert.equal(bankPayload.PreOrder.PromotionAmount, 0);
+  assert.equal(bankPayload.PreOrder.PromotionDiscount, "0");
+  assert.equal(bankPayload.PreOrder.PromotionName, "");
   assert.match(bankPayload.PreOrder.Notes, /Vietcombank 1063583549/);
   assert.equal(bankPayload.PreOrderPayments.length, 0);
   assert.equal(bankPayload.PreOrderItems.length, 1);
@@ -511,6 +516,34 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   const grossFromLines = mapOrderToS3InvoicePayload({ ...mockBankOrder, subtotal: undefined }, defaultConfig, 841894);
   assert.equal(grossFromLines.TotalAmount, 2300000);
   assert.equal(grossFromLines.InvoiceAmount, 2150000);
+
+  // The voucher must reach S3 once. S3 subtracts InvoiceDiscount and
+  // PromotionDiscountAmount separately, so the real GIANG order (632.000 gross,
+  // 133.000 voucher, 499.000 charged) used to land at 366.000 on the POS.
+  const voucherOrder = {
+    id: 'ord_giang_499',
+    items: [
+      { s3ProductId: 1808964, name: 'Kem body Lotion 200', quantity: 1, price: 276000 },
+      { s3ProductId: 1808965, name: 'Sữa tắm TWON 450', quantity: 1, price: 177000 },
+      { s3ProductId: 1808966, name: 'Nước hoa Tamaya 10', quantity: 1, price: 179000 }
+    ],
+    subtotal: 632000,
+    discountAmount: 133000,
+    couponCode: 'GIANG',
+    shippingFee: 0,
+    total: 499000,
+    paymentMethod: 'cod'
+  };
+  const voucherInvoice = mapOrderToS3InvoicePayload(voucherOrder, defaultConfig, 841894);
+  assert.equal(voucherInvoice.TotalAmount, 632000);
+  assert.equal(voucherInvoice.InvoiceAmount, 499000);
+  assert.equal(voucherInvoice.InvoiceDiscount, '133000');
+
+  const voucherPreOrder = mapOrderToS3Payload(voucherOrder, defaultConfig, 841894);
+  const chargedTwice = voucherPreOrder.PreOrder.TotalAmount
+    - Number(voucherPreOrder.PreOrder.InvoiceDiscount)
+    - voucherPreOrder.PreOrder.PromotionDiscountAmount;
+  assert.equal(chargedTwice, 499000, 'S3 trừ InvoiceDiscount và PromotionDiscountAmount riêng, nên voucher không được nằm ở cả hai');
 
   // 11. Branch inventory: POST /Vision/Products/Inventories, and stock shortages block.
   resetS3TokenCache();

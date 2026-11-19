@@ -305,11 +305,18 @@ export function mapOrderToS3Payload(order, config, customerId = 0) {
       TotalAmount: totals.gross,
       InvoiceAmount: totals.net,
       CustomerReceived: order.paymentStatus === 'paid' ? totals.net : 0,
-      Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
-      PromotionName: order.couponCode ? `Voucher ${order.couponCode}` : "",
-      PromotionAmount: Number(order.discountAmount || 0),
-      PromotionDiscount: order.discountAmount ? String(order.discountAmount) : "0",
-      PromotionDiscountAmount: Number(order.discountAmount || 0),
+      Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''}${order.couponCode ? ` | Voucher ${order.couponCode}` : ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
+      // S3 subtracts InvoiceDiscount and PromotionDiscountAmount independently:
+      // its own worked example (TotalAmount 1397300, InvoiceDiscount "10%" = 139730,
+      // PromotionDiscountAmount 125757) lands on InvoiceAmount 1131813 — both are
+      // summed. Sending the same amount in both fields therefore charged the voucher
+      // twice (632000 - 133000 - 133000 = 366000). SkinID's voucher is an order-level
+      // discount, not an ES3 promotion campaign, so it belongs in InvoiceDiscount
+      // only and the Promotion* block stays empty.
+      PromotionName: "",
+      PromotionAmount: 0,
+      PromotionDiscount: "0",
+      PromotionDiscountAmount: 0,
       NgayLayHang: null,
       HadChangedProductPrice: false,
       HadDiscountProduct: Number(order.discountAmount || 0) > 0,
