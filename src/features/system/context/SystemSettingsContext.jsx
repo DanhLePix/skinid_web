@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import {
   DEFAULT_SYSTEM_SETTINGS,
-  fetchSystemSettings
+  fetchSystemSettings,
+  fetchVouchers
 } from '../../content/index.js';
 
 const SystemSettingsContext = createContext(DEFAULT_SYSTEM_SETTINGS);
@@ -20,6 +21,10 @@ export function SystemSettingsProvider({ children }) {
         }
       })
       .catch(() => {});
+
+    // Nạp voucher vào cache dùng chung cho checkout. Không có bước này thì
+    // getDynamicCoupons() chỉ trả bộ hardcode và mã tạo trong Admin bị từ chối.
+    fetchVouchers().catch(() => {});
 
     // Lắng nghe sự kiện cập nhật cấu hình realtime từ Admin
     const handleUpdate = (event) => {
