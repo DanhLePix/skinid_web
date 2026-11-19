@@ -62,6 +62,7 @@ jobs:
       - name: Prepare GitHub Pages bundle
         run: |
           cp favicon.png favicon-32.png favicon.ico dist/
+          cp CNAME dist/
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
           ls -1 dist
@@ -78,24 +79,6 @@ jobs:
           if [ "$current" != '"build_type":"workflow"' ]; then
             echo "::warning::Pages still uses branch publishing. Set Settings > Pages > Source = GitHub Actions."
           fi
-
-      # GitHub still builds the raw repo root for every push while the site uses
-      # branch publishing. That build serves the Vite dev shell (/src/main.jsx),
-      # which browsers refuse because GitHub sends it as text/jsx. Waiting for it
-      # to finish makes the artifact deployment below the last writer.
-      - name: Let the legacy branch build finish first
-        run: |
-          sha='${{ github.sha }}'
-          py='import sys,json; r=json.load(sys.stdin).get("workflow_runs",[]); l=[x for x in r if x["name"]=="pages build and deployment"]; print(l[0]["status"] if l else "absent")'
-          for i in $(seq 1 45); do
-            status=$(curl -sS "https://api.github.com/repos/${{ github.repository }}/actions/runs?head_sha=$sha&per_page=30" | python3 -c "$py")
-            echo "attempt $i: legacy pages build = $status"
-            if [ "$status" = "completed" ]; then
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::warning::Legacy Pages build still running; deploying anyway."
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
