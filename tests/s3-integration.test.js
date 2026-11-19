@@ -61,12 +61,12 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(bankPayload.PreOrder.InvoiceAmount, 2150000);
   assert.equal(bankPayload.PreOrder.CustomerReceived, 0);
   // S3 sums InvoiceDiscount and PromotionDiscountAmount, so the voucher must ride in
-  // exactly one of them or the customer is charged the discount twice.
-  assert.equal(bankPayload.PreOrder.InvoiceDiscount, 150000);
-  assert.equal(bankPayload.PreOrder.PromotionDiscountAmount, 0);
-  assert.equal(bankPayload.PreOrder.PromotionAmount, 0);
-  assert.equal(bankPayload.PreOrder.PromotionDiscount, "0");
-  assert.equal(bankPayload.PreOrder.PromotionName, "");
+  // exactly one of them. The e-invoice only prints "Khuyến mãi" from the Promotion*
+  // block, so that is the one that carries it.
+  assert.equal(bankPayload.PreOrder.InvoiceDiscount, 0);
+  assert.equal(bankPayload.PreOrder.PromotionDiscountAmount, 150000);
+  assert.equal(bankPayload.PreOrder.PromotionDiscount, "150000");
+  assert.equal(bankPayload.PreOrder.PromotionName, "Voucher SKINID10");
   assert.match(bankPayload.PreOrder.Notes, /Vietcombank 1063583549/);
   assert.equal(bankPayload.PreOrderPayments.length, 0);
   assert.equal(bankPayload.PreOrderItems.length, 1);
@@ -191,7 +191,9 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(invoicePayload.CustomerId, 841894);
   assert.equal(invoicePayload.InvoiceAmount, 2150000);
   assert.equal(invoicePayload.TotalAmount, 2300000);
-  assert.equal(invoicePayload.InvoiceDiscount, '150000');
+  assert.equal(invoicePayload.InvoiceDiscount, '0');
+  assert.equal(invoicePayload.PromotionDiscountAmount, 150000);
+  assert.equal(invoicePayload.PromotionName, 'Voucher SKINID10');
   assert.equal(invoicePayload.CompleteWithCOD, false);
   assert.equal(invoicePayload.Articles, undefined);
   assert.equal(invoicePayload.Items.length, 1);
@@ -517,9 +519,10 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(grossFromLines.TotalAmount, 2300000);
   assert.equal(grossFromLines.InvoiceAmount, 2150000);
 
-  // The voucher must reach S3 once. S3 subtracts InvoiceDiscount and
-  // PromotionDiscountAmount separately, so the real GIANG order (632.000 gross,
-  // 133.000 voucher, 499.000 charged) used to land at 366.000 on the POS.
+  // The voucher must reach S3 once, and must land in the field the e-invoice prints.
+  // S3 subtracts InvoiceDiscount and PromotionDiscountAmount separately, so the real
+  // GIANG order (632.000 gross, 133.000 voucher, 499.000 charged) used to land at
+  // 366.000 on the POS, and the printed invoice never showed a "Khuyến mãi" line.
   const voucherOrder = {
     id: 'ord_giang_499',
     items: [
@@ -537,13 +540,21 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   const voucherInvoice = mapOrderToS3InvoicePayload(voucherOrder, defaultConfig, 841894);
   assert.equal(voucherInvoice.TotalAmount, 632000);
   assert.equal(voucherInvoice.InvoiceAmount, 499000);
-  assert.equal(voucherInvoice.InvoiceDiscount, '133000');
+  assert.equal(voucherInvoice.InvoiceDiscount, '0');
+  assert.equal(voucherInvoice.PromotionDiscountAmount, 133000);
+  assert.equal(voucherInvoice.PromotionDiscount, '133000');
+  assert.equal(voucherInvoice.PromotionName, 'Voucher GIANG');
 
   const voucherPreOrder = mapOrderToS3Payload(voucherOrder, defaultConfig, 841894);
   const chargedTwice = voucherPreOrder.PreOrder.TotalAmount
     - Number(voucherPreOrder.PreOrder.InvoiceDiscount)
     - voucherPreOrder.PreOrder.PromotionDiscountAmount;
   assert.equal(chargedTwice, 499000, 'S3 trừ InvoiceDiscount và PromotionDiscountAmount riêng, nên voucher không được nằm ở cả hai');
+
+  // An order without a voucher must not print a discount line at all.
+  const noVoucher = mapOrderToS3InvoicePayload({ ...mockCodOrder, couponCode: null }, defaultConfig, 922848);
+  assert.equal(noVoucher.PromotionName, '');
+  assert.equal(noVoucher.PromotionDiscountAmount, 0);
 
   // 11. Branch inventory: POST /Vision/Products/Inventories, and stock shortages block.
   resetS3TokenCache();

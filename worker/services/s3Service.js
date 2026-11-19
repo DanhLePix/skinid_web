@@ -245,6 +245,8 @@ export function mapOrderToS3Payload(order, config, customerId = 0) {
   const branchId = Number(config.branchId || 9099);
   const cashierId = Number(config.cashierId || 16614);
   const totals = invoiceTotals(order);
+  const voucherDiscount = Math.max(0, Number(order.discountAmount) || 0);
+  const voucherLabel = String(order.couponCode || '').trim();
 
   const preOrderItems = (order.items || []).map((item, index) => {
     const unitPrice = Number(item.price || item.unitPrice || 0);
@@ -301,22 +303,20 @@ export function mapOrderToS3Payload(order, config, customerId = 0) {
       YS_PreOrderID: 0,
       Cashier: cashierId,
       CustomerID: resolvedCustomerId,
-      InvoiceDiscount: Number(order.discountAmount || 0),
+      // S3 subtracts InvoiceDiscount and PromotionDiscountAmount independently and only
+      // renders the "Khuyến mãi" line on the e-invoice from the Promotion* block. The
+      // voucher therefore rides in Promotion* alone: it shows up as a named discount and
+      // is still deducted exactly once (632000 - 133000 = 499000). Splitting the same
+      // amount across both fields charged it twice (632000 - 133000 - 133000 = 366000).
+      InvoiceDiscount: 0,
       TotalAmount: totals.gross,
       InvoiceAmount: totals.net,
       CustomerReceived: order.paymentStatus === 'paid' ? totals.net : 0,
-      Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''}${order.couponCode ? ` | Voucher ${order.couponCode}` : ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
-      // S3 subtracts InvoiceDiscount and PromotionDiscountAmount independently:
-      // its own worked example (TotalAmount 1397300, InvoiceDiscount "10%" = 139730,
-      // PromotionDiscountAmount 125757) lands on InvoiceAmount 1131813 — both are
-      // summed. Sending the same amount in both fields therefore charged the voucher
-      // twice (632000 - 133000 - 133000 = 366000). SkinID's voucher is an order-level
-      // discount, not an ES3 promotion campaign, so it belongs in InvoiceDiscount
-      // only and the Promotion* block stays empty.
-      PromotionName: "",
+      Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
+      PromotionName: voucherDiscount > 0 ? `Voucher ${voucherLabel}`.trim() : "",
       PromotionAmount: 0,
-      PromotionDiscount: "0",
-      PromotionDiscountAmount: 0,
+      PromotionDiscount: voucherDiscount > 0 ? String(voucherDiscount) : "0",
+      PromotionDiscountAmount: voucherDiscount,
       NgayLayHang: null,
       HadChangedProductPrice: false,
       HadDiscountProduct: Number(order.discountAmount || 0) > 0,
@@ -342,6 +342,7 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
   const cashierId = Number(config.cashierId || 16614);
   const totals = invoiceTotals(order);
   const { gross, net: total, discount } = totals;
+  const voucherLabel = String(order.couponCode || '').trim();
   const sourceItems = Array.isArray(order.items) ? order.items : [];
   if (!sourceItems.length) {
     throw new Error(`Đơn ${orderId} không có sản phẩm để xuất hoá đơn.`);
@@ -408,7 +409,14 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
     CustomerId: resolvedCustomerId,
     InvoiceAmount: total,
     TotalAmount: gross,
-    InvoiceDiscount: discount ? String(discount) : "0",
+    // The e-invoice prints the "Khuyến mãi" line from the Promotion* block, not from
+    // InvoiceDiscount. SkinID vouchers are order-level discounts, so they go here and
+    // InvoiceDiscount stays 0 — sending both would deduct the voucher twice.
+    InvoiceDiscount: "0",
+    PromotionName: discount > 0 ? `Voucher ${voucherLabel}`.trim() : "",
+    PromotionAmount: 0,
+    PromotionDiscount: discount > 0 ? String(discount) : "0",
+    PromotionDiscountAmount: discount,
     Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
     CustomerReceived: total,
     ReferenceCode: 0,
