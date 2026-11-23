@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPrice } from '../../features/catalog/index.js';
 import { useCampaign } from '../../features/content/index.js';
-import { CURATED_COMBOS, RETAIL_50_DEALS, CAMPAIGN_STEPS } from '../../data/promotions.js';
+import { CURATED_COMBOS, RETAIL_50_DEALS } from '../../data/promotions.js';
 import { assetUrl } from '../../assets/index.js';
 import StorePromotionNotice from '../commerce/StorePromotionNotice.jsx';
 import ComboName from '../commerce/ComboName.jsx';
@@ -226,10 +226,9 @@ function ComboStory({ combos = CURATED_COMBOS }) {
 }
 
 export default function FlashSaleBanner() {
-  const { combos = CURATED_COMBOS, flashSale = RETAIL_50_DEALS, steps = CAMPAIGN_STEPS } = useCampaign();
+  const { combos = CURATED_COMBOS, flashSale = RETAIL_50_DEALS } = useCampaign();
   const listCombos = combos?.length ? combos : CURATED_COMBOS;
   const listDeals = flashSale?.length ? flashSale : RETAIL_50_DEALS;
-  const listSteps = steps?.length ? steps : CAMPAIGN_STEPS;
   const ticker = [...TICKER, ...TICKER];
   return (
     <section className="skinid-collection-section promo-stage" id="khuyen-mai" aria-label="Khuyến mãi & Combo SkinID">
@@ -298,21 +297,6 @@ export default function FlashSaleBanner() {
             </li>
           ))}
         </ul>
-
-        <div className="promo-steps" data-reveal>
-          <div className="promo-steps__intro">
-            <span className="skinid-editorial-kicker">LIKE · SHARE · ENJOY</span>
-            <h3>Ưu đãi nhỏ. <em>Niềm vui mỗi ngày.</em></h3>
-          </div>
-          <ol>
-            {listSteps.map((step) => (
-              <li key={step.step || step.id}><span>0{step.step || 1}</span><div><strong>{step.title}</strong><p>{step.desc}</p></div></li>
-            ))}
-          </ol>
-          <MagneticLink className="btn btn--primary promo-cta" href={PROMO_URL}>
-            <span>Xem ưu đãi tại cửa hàng</span><span className="promo-cta__arrow" aria-hidden="true">↗</span>
-          </MagneticLink>
-        </div>
       </div>
     </section>
   );

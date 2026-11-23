@@ -28,8 +28,8 @@ export const LEGAL_POLICIES = {
           ],
           [
             "Đối tác công nghệ AI phân tích da (bên xử lý dữ liệu)",
-            "[TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE]",
-            "Quốc gia đặt máy chủ: [QUỐC GIA]; Phạm vi: chỉ xử lý theo chỉ dẫn của bên kiểm soát"
+            "WEIRD&WOW INC (thương hiệu Acie, Hoa Kỳ)",
+            "Quốc gia đặt máy chủ: Hoa Kỳ; Địa chỉ đối tác: 200 Great Road, Bedford, MA 01730, USA; Phạm vi: chỉ xử lý theo chỉ dẫn của bên kiểm soát"
           ],
           [
             "Đầu mối bảo vệ dữ liệu cá nhân",
@@ -57,9 +57,7 @@ export const LEGAL_POLICIES = {
     "seoDesc": "Phiên bản 2.0 — Đơn vị vận hành tại SkinID.vn.",
     "status": "current",
     "pendingFields": [
-      "[QUỐC GIA]",
-      "[SỐ / LINK XÁC NHẬN]",
-      "[TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE]"
+      "[SỐ / LINK XÁC NHẬN]"
     ]
   },
   "dieu-khoan-giao-dich": {
@@ -93,7 +91,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* SkinID công bố tên sản phẩm, thành phần, công dụng, xuất xứ, số công bố mỹ phẩm, hạn sử dụng và hướng dẫn sử dụng theo hồ sơ công bố của từng sản phẩm.\n* Mỹ phẩm không phải là thuốc và không có tác dụng thay thế thuốc chữa bệnh. Với da đang điều trị hoặc có bệnh lý, bạn nên hỏi ý kiến bác sĩ da liễu.\n* Giá niêm yết bằng Việt Nam đồng, đã gồm VAT (trừ khi ghi chú khác). Phí vận chuyển và các khoản phí khác (nếu có) được hiển thị rõ trước khi bạn xác nhận đặt hàng.\n* Hạn sử dụng: sản phẩm thông thường còn hạn tối thiểu [6] tháng khi giao. Sản phẩm có vòng đời ngắn hoặc hạn còn lại dưới mức này sẽ được ghi rõ hạn sử dụng thực tế trên trang sản phẩm trước khi bạn mua. SkinID không bán sản phẩm đã hết hạn."
+            "content": "* SkinID công bố tên sản phẩm, thành phần, công dụng, xuất xứ, số công bố mỹ phẩm, hạn sử dụng và hướng dẫn sử dụng theo hồ sơ công bố của từng sản phẩm.\n* Mỹ phẩm không phải là thuốc và không có tác dụng thay thế thuốc chữa bệnh. Với da đang điều trị hoặc có bệnh lý, bạn nên hỏi ý kiến bác sĩ da liễu.\n* Giá niêm yết bằng Việt Nam đồng, đã gồm VAT (trừ khi ghi chú khác). Phí vận chuyển và các khoản phí khác (nếu có) được hiển thị rõ trước khi bạn xác nhận đặt hàng.\n* Hạn sử dụng: sản phẩm thông thường còn hạn tối thiểu 6 tháng khi giao. Sản phẩm có vòng đời ngắn hoặc hạn còn lại dưới mức này sẽ được ghi rõ hạn sử dụng thực tế trên trang sản phẩm trước khi bạn mua. SkinID không bán sản phẩm đã hết hạn."
           }
         ]
       },
@@ -194,9 +192,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Điều khoản sử dụng | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Điều khoản sử dụng tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[6]"
-    ]
+    "pendingFields": []
   },
   "huong-dan-mua-hang": {
     "number": 2,
@@ -293,7 +289,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Bên kiểm soát dữ liệu: CÔNG TY TNHH FIELDMAN – quyết định mục đích và phương tiện xử lý dữ liệu của khách hàng SkinID.\n* Bên xử lý dữ liệu: [TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE] xử lý ảnh và dữ liệu da để trả kết quả phân tích, chỉ theo chỉ dẫn của bên kiểm soát và theo hợp đồng xử lý dữ liệu đã ký; không được sử dụng dữ liệu cho mục đích riêng khi chưa có sự đồng ý của bạn.\n* Các bên xử lý khác: đơn vị vận chuyển, cổng thanh toán, nhà cung cấp hạ tầng đám mây, email/SMS – chỉ nhận dữ liệu cần thiết cho công việc được giao."
+            "content": "* Bên kiểm soát dữ liệu: CÔNG TY TNHH FIELDMAN – quyết định mục đích và phương tiện xử lý dữ liệu của khách hàng SkinID.\n* Bên xử lý dữ liệu: WEIRD&WOW INC (thương hiệu Acie, Hoa Kỳ) xử lý ảnh và dữ liệu da để trả kết quả phân tích, chỉ theo chỉ dẫn của bên kiểm soát và theo hợp đồng xử lý dữ liệu đã ký; không được sử dụng dữ liệu cho mục đích riêng khi chưa có sự đồng ý của bạn.\n* Các bên xử lý khác: đơn vị vận chuyển, cổng thanh toán, nhà cung cấp hạ tầng đám mây, email/SMS – chỉ nhận dữ liệu cần thiết cho công việc được giao."
           }
         ]
       },
@@ -403,7 +399,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* SkinID không bán dữ liệu cá nhân.\n* Dữ liệu chỉ được chia sẻ với các bên nêu tại Mục 3.1, ở mức tối thiểu cần thiết, hoặc với cơ quan nhà nước có thẩm quyền theo quy định pháp luật.\n* Máy chủ lưu trữ/xử lý ảnh và dữ liệu da đặt tại: [VIỆT NAM / QUỐC GIA]. Nếu dữ liệu được chuyển ra nước ngoài, SkinID thực hiện hồ sơ đánh giá tác động chuyển dữ liệu xuyên biên giới và các thủ tục theo quy định, và thông báo rõ cho bạn trước khi bạn đồng ý."
+            "content": "* SkinID không bán dữ liệu cá nhân.\n* Dữ liệu chỉ được chia sẻ với các bên nêu tại Mục 3.1, ở mức tối thiểu cần thiết, hoặc với cơ quan nhà nước có thẩm quyền theo quy định pháp luật.\n* Máy chủ lưu trữ/xử lý ảnh và dữ liệu da đặt tại: Hoa Kỳ. Nếu dữ liệu được chuyển ra nước ngoài, SkinID thực hiện hồ sơ đánh giá tác động chuyển dữ liệu xuyên biên giới và các thủ tục theo quy định, và thông báo rõ cho bạn trước khi bạn đồng ý."
           }
         ]
       },
@@ -428,7 +424,7 @@ export const LEGAL_POLICIES = {
               ],
               [
                 "Thông tin tài khoản",
-                "Đến khi bạn đóng tài khoản; xóa trong [30] ngày sau đó"
+                "Đến khi bạn đóng tài khoản; xóa trong 30 ngày sau đó"
               ],
               [
                 "Hóa đơn, chứng từ giao dịch",
@@ -440,7 +436,7 @@ export const LEGAL_POLICIES = {
               ],
               [
                 "Nhật ký kỹ thuật",
-                "[12] tháng"
+                "12 tháng"
               ]
             ]
           }
@@ -466,7 +462,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "Tính năng phân tích da dành cho người từ [16] tuổi trở lên. Việc xử lý dữ liệu của người chưa đủ tuổi cần có sự đồng ý của cha, mẹ hoặc người giám hộ theo quy định pháp luật."
+            "content": "Tính năng phân tích da dành cho người từ 16 tuổi trở lên. Việc xử lý dữ liệu của người chưa đủ tuổi cần có sự đồng ý của cha, mẹ hoặc người giám hộ theo quy định pháp luật."
           }
         ]
       },
@@ -503,13 +499,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Bảo vệ dữ liệu cá nhân | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Bảo vệ dữ liệu cá nhân tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[12]",
-      "[16]",
-      "[30]",
-      "[TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE]",
-      "[VIỆT NAM / QUỐC GIA]"
-    ]
+    "pendingFields": []
   },
   "chinh-sach-van-chuyen": {
     "number": 4,
@@ -616,7 +606,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "Áp dụng cho đơn có giá trị dưới [5.000.000đ]. Bạn thanh toán cho nhân viên giao hàng đúng số tiền trên đơn đã xác nhận."
+            "content": "Áp dụng cho đơn có giá trị dưới 5.000.000đ. Bạn thanh toán cho nhân viên giao hàng đúng số tiền trên đơn đã xác nhận."
           }
         ]
       },
@@ -661,7 +651,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "Thanh toán bằng Visa, Mastercard, JCB, thẻ ATM nội địa hoặc ví [MoMo / ZaloPay / VNPay] qua cổng [TÊN CỔNG THANH TOÁN]. Thông tin thẻ được nhập và xử lý trực tiếp tại cổng thanh toán, có xác thực OTP/3D Secure. SkinID không lưu trữ thông tin thẻ của bạn."
+            "content": "Hiện tại SkinID áp dụng hai hình thức thanh toán: chuyển khoản ngân hàng qua VietQR (Vietcombank) theo Mục 5.2 và thanh toán khi nhận hàng (COD) theo Mục 5.1. Thẻ quốc tế, thẻ ATM nội địa và ví điện tử (MoMo, ZaloPay, VNPay,…) chưa được áp dụng. Khi triển khai thanh toán qua cổng trung gian, SkinID sẽ cập nhật mục này; khi đó thông tin thẻ được nhập và xử lý trực tiếp tại cổng thanh toán với xác thực OTP/3D Secure, và SkinID không lưu trữ thông tin thẻ của bạn."
           }
         ]
       },
@@ -694,7 +684,7 @@ export const LEGAL_POLICIES = {
               ],
               [
                 "2. Thực hiện lệnh hoàn tiền",
-                "Trong [2] ngày làm việc sau khi phê duyệt",
+                "Trong 2 ngày làm việc sau khi phê duyệt",
                 "SkinID"
               ],
               [
@@ -722,12 +712,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Thanh toán & hoàn tiền | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Thanh toán & hoàn tiền tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[2]",
-      "[5.000.000đ]",
-      "[MoMo / ZaloPay / VNPay]",
-      "[TÊN CỔNG THANH TOÁN]"
-    ]
+    "pendingFields": []
   },
   "chinh-sach-doi-tra": {
     "number": 6,
@@ -882,13 +867,13 @@ export const LEGAL_POLICIES = {
             "rows": [
               [
                 "Đo bằng cảm biến vật lý",
-                "Thiết bị soi da [TÊN THIẾT BỊ] đo trực tiếp",
-                "[Độ ẩm, độ dầu, … – liệt kê theo thiết bị]"
+                "Thiết bị soi da Acie® đo trực tiếp",
+                "Độ ẩm (hydration), độ dầu (oiliness), độ đàn hồi (elasticity) – theo thông số công bố của Acie"
               ],
               [
                 "Suy luận bằng AI từ hình ảnh",
                 "Mô hình AI ước tính từ ảnh chụp",
-                "[Mụn, lỗ chân lông, nếp nhăn, sắc tố, … – liệt kê theo hệ thống]"
+                "Mụn (acne), lỗ chân lông (pores), sắc tố/nám (pigmentation), nếp nhăn (nhăn đuôi mắt, rãnh cười), độ đàn hồi (elasticity)"
               ]
             ]
           }
@@ -900,7 +885,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "Kết quả có thể sai lệch do ánh sáng, góc chụp, camera, lớp trang điểm, kem chống nắng, tình trạng da tạm thời và giới hạn của mô hình. Kết quả giữa các lần đo có thể khác nhau. Để kết quả ổn định, hãy chụp với da sạch, ánh sáng tự nhiên, cùng điều kiện mỗi lần. [Thông tin độ chính xác/kiểm định nếu có]."
+            "content": "Kết quả có thể sai lệch do ánh sáng, góc chụp, camera, lớp trang điểm, kem chống nắng, tình trạng da tạm thời và giới hạn của mô hình. Kết quả giữa các lần đo có thể khác nhau. Để kết quả ổn định, hãy chụp với da sạch, ánh sáng tự nhiên, cùng điều kiện mỗi lần."
           }
         ]
       },
@@ -920,7 +905,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Chỉ phân tích ảnh của chính bạn hoặc của người đã đồng ý.\n* Người dùng từ [16] tuổi trở lên (xem Mục 3.7).\n* Dữ liệu ảnh và chỉ số da được xử lý theo Mục 3 và Mục 8."
+            "content": "* Chỉ phân tích ảnh của chính bạn hoặc của người đã đồng ý.\n* Người dùng từ 16 tuổi trở lên (xem Mục 3.7).\n* Dữ liệu ảnh và chỉ số da được xử lý theo Mục 3 và Mục 8."
           }
         ]
       }
@@ -936,13 +921,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Dịch vụ AI phân tích da | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Dịch vụ AI phân tích da tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[16]",
-      "[Mụn, lỗ chân lông, nếp nhăn, sắc tố, … – liệt kê theo hệ thống]",
-      "[Thông tin độ chính xác/kiểm định nếu có]",
-      "[TÊN THIẾT BỊ]",
-      "[Độ ẩm, độ dầu, … – liệt kê theo thiết bị]"
-    ]
+    "pendingFields": []
   },
   "chinh-sach-du-lieu-soi-da": {
     "number": 8,
@@ -960,7 +939,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Trước lần phân tích đầu tiên, bạn được hiển thị màn hình đồng ý riêng nêu rõ: mục đích, nơi xử lý, thời gian lưu và quyền xóa.\n* Ảnh chỉ được dùng để phân tích da; không dùng để nhận dạng hay xác thực danh tính, không dùng cho quảng cáo và không công khai.\n* Bạn có thể chọn: [chỉ phân tích, không lưu ảnh] hoặc [lưu ảnh để theo dõi tiến triển]."
+            "content": "* Trước lần phân tích đầu tiên, bạn được hiển thị màn hình đồng ý riêng nêu rõ: mục đích, nơi xử lý, thời gian lưu và quyền xóa.\n* Ảnh chỉ được dùng để phân tích da; không dùng để nhận dạng hay xác thực danh tính, không dùng cho quảng cáo và không công khai.\n* Chế độ mặc định: ảnh chỉ được dùng để phân tích và không lưu trữ sau khi có kết quả. Nếu bạn chủ động lưu, ảnh được giữ để theo dõi tiến triển và bạn có thể xóa bất kỳ lúc nào (theo Mục 8.4)."
           }
         ]
       },
@@ -980,7 +959,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "[TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE] chỉ truy cập ảnh và dữ liệu da để thực hiện phân tích; không lưu trữ quá thời gian cần thiết [THỜI GIAN], không chia sẻ cho bên thứ ba và không dùng để huấn luyện mô hình nếu bạn chưa bật tùy chọn “Cải tiến AI”."
+            "content": "WEIRD&WOW INC (thương hiệu Acie, Hoa Kỳ) chỉ truy cập ảnh và dữ liệu da để thực hiện phân tích; không lưu trữ quá 30 ngày kể từ thời điểm phân tích, trừ khi bạn chủ động lưu để theo dõi tiến triển, không chia sẻ cho bên thứ ba và không dùng để huấn luyện mô hình nếu bạn chưa bật tùy chọn “Cải tiến AI”."
           }
         ]
       },
@@ -990,7 +969,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Xóa từng ảnh hoặc từng lần phân tích trong mục “Lịch sử soi da”.\n* Xóa toàn bộ ảnh và lịch sử phân tích trong mục “Quyền riêng tư”.\n* Sau khi bạn xóa, dữ liệu được gỡ khỏi hệ thống đang hoạt động ngay và khỏi bản sao lưu trong vòng [30] ngày; SkinID đồng thời yêu cầu đối tác công nghệ xóa dữ liệu tương ứng."
+            "content": "* Xóa từng ảnh hoặc từng lần phân tích trong mục “Lịch sử soi da”.\n* Xóa toàn bộ ảnh và lịch sử phân tích trong mục “Quyền riêng tư”.\n* Sau khi bạn xóa, dữ liệu được gỡ khỏi hệ thống đang hoạt động ngay và khỏi bản sao lưu trong vòng 30 ngày; SkinID đồng thời yêu cầu đối tác công nghệ xóa dữ liệu tương ứng."
           }
         ]
       }
@@ -1006,13 +985,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Ảnh & dữ liệu soi da | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Ảnh & dữ liệu soi da tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[30]",
-      "[THỜI GIAN]",
-      "[TÊN ĐỐI TÁC CÔNG NGHỆ – ACIE]",
-      "[chỉ phân tích, không lưu ảnh]",
-      "[lưu ảnh để theo dõi tiến triển]"
-    ]
+    "pendingFields": []
   },
   "chinh-sach-bao-hanh-thiet-bi": {
     "number": 9,
@@ -1025,7 +998,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Thời hạn bảo hành: [12] tháng kể từ ngày nhận hàng, căn cứ theo hóa đơn hoặc mã đơn hàng.\n* Đổi mới trong 7 ngày đầu nếu thiết bị lỗi do nhà sản xuất.\n* Phạm vi: lỗi phần cứng, linh kiện do nhà sản xuất trong điều kiện sử dụng bình thường."
+            "content": "* Thời hạn bảo hành: 12 tháng kể từ ngày nhận hàng (tương ứng bảo hành 1 năm của nhà sản xuất Acie), căn cứ theo hóa đơn hoặc mã đơn hàng.\n* Đổi mới trong 7 ngày đầu nếu thiết bị lỗi do nhà sản xuất.\n* Phạm vi: lỗi phần cứng, linh kiện do nhà sản xuất trong điều kiện sử dụng bình thường."
           }
         ]
       },
@@ -1035,7 +1008,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Hư hỏng do rơi vỡ, vào nước, cháy nổ, dùng sai điện áp/bộ sạc không phù hợp.\n* Tự ý tháo, sửa chữa hoặc can thiệp phần mềm.\n* Hao mòn tự nhiên của phụ kiện tiêu hao [đầu soi, pin – nếu áp dụng]."
+            "content": "* Hư hỏng do rơi vỡ, vào nước, cháy nổ, dùng sai điện áp/bộ sạc không phù hợp.\n* Tự ý tháo, sửa chữa hoặc can thiệp phần mềm.\n* Hao mòn tự nhiên của phụ kiện tiêu hao: capsule/đầu đo dùng kèm, pin sạc."
           },
           {
             "type": "text",
@@ -1049,15 +1022,15 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "1. Liên hệ [HOTLINE BẢO HÀNH] kèm mã đơn hàng, số serial và mô tả lỗi."
+            "content": "1. Liên hệ hotline 0704 136 862 (có Zalo) hoặc email operation@fieldman.vn, kèm mã đơn hàng, số serial và mô tả lỗi."
           },
           {
             "type": "text",
-            "content": "2. Gửi thiết bị về [ĐỊA CHỈ TRUNG TÂM BẢO HÀNH] (SkinID chịu phí vận chuyển với thiết bị lỗi trong thời hạn bảo hành)."
+            "content": "2. Gửi thiết bị về trung tâm bảo hành của SkinID tại 35 đường số 3, Phường Tân Mỹ, TP. Hồ Chí Minh (SkinID chịu phí vận chuyển với thiết bị lỗi trong thời hạn bảo hành)."
           },
           {
             "type": "text",
-            "content": "3. Thời gian xử lý tối đa [15] ngày làm việc; nếu quá hạn, SkinID cung cấp thiết bị thay thế tạm thời hoặc đổi thiết bị mới."
+            "content": "3. Thời gian xử lý tối đa 15 ngày làm việc; nếu quá hạn, SkinID cung cấp thiết bị thay thế tạm thời hoặc đổi thiết bị mới."
           },
           {
             "type": "text",
@@ -1077,13 +1050,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Bảo hành thiết bị | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Bảo hành thiết bị tại SkinID.vn.",
     "status": "planned",
-    "pendingFields": [
-      "[12]",
-      "[15]",
-      "[HOTLINE BẢO HÀNH]",
-      "[ĐỊA CHỈ TRUNG TÂM BẢO HÀNH]",
-      "[đầu soi, pin – nếu áp dụng]"
-    ]
+    "pendingFields": []
   },
   "quan-ly-tai-khoan": {
     "number": 10,
@@ -1096,7 +1063,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "* Bạn có thể xem, chỉnh sửa thông tin cá nhân, địa chỉ, tùy chọn nhận thông báo và các lựa chọn đồng ý trong mục “Tài khoản”.\n* Bạn có thể tải về bản sao dữ liệu của mình (thông tin tài khoản, lịch sử đơn hàng, lịch sử phân tích da) qua chức năng [Tải dữ liệu của tôi] hoặc gửi yêu cầu tới operation@fieldman.vn."
+            "content": "* Bạn có thể xem, chỉnh sửa thông tin cá nhân, địa chỉ, tùy chọn nhận thông báo và các lựa chọn đồng ý trong mục “Tài khoản”.\n* Bạn có thể tải về bản sao dữ liệu của mình: xuất báo cáo PDF từng lần phân tích trong mục “Lịch sử soi da”, hoặc gửi yêu cầu tới operation@fieldman.vn để nhận bản sao dữ liệu đầy đủ (thông tin tài khoản, lịch sử đơn hàng, lịch sử phân tích da)."
           }
         ]
       },
@@ -1118,7 +1085,7 @@ export const LEGAL_POLICIES = {
           },
           {
             "type": "text",
-            "content": "4. Tài khoản bị vô hiệu hóa ngay; dữ liệu được xóa trong vòng [30] ngày, trừ dữ liệu SkinID bắt buộc lưu theo pháp luật (hóa đơn, chứng từ kế toán) – các dữ liệu này được tách khỏi hồ sơ khách hàng và chỉ dùng cho mục đích lưu trữ bắt buộc."
+            "content": "4. Tài khoản bị vô hiệu hóa ngay; dữ liệu được xóa trong vòng 30 ngày, trừ dữ liệu SkinID bắt buộc lưu theo pháp luật (hóa đơn, chứng từ kế toán) – các dữ liệu này được tách khỏi hồ sơ khách hàng và chỉ dùng cho mục đích lưu trữ bắt buộc."
           },
           {
             "type": "text",
@@ -1132,7 +1099,7 @@ export const LEGAL_POLICIES = {
         "blocks": [
           {
             "type": "text",
-            "content": "Tài khoản không đăng nhập trong 24 tháng sẽ được thông báo trước [30] ngày qua email/SMS; nếu bạn không phản hồi, SkinID sẽ xóa ảnh và dữ liệu phân tích da, và có thể đóng tài khoản."
+            "content": "Tài khoản không đăng nhập trong 24 tháng sẽ được thông báo trước 30 ngày qua email/SMS; nếu bạn không phản hồi, SkinID sẽ xóa ảnh và dữ liệu phân tích da, và có thể đóng tài khoản."
           }
         ]
       }
@@ -1148,10 +1115,7 @@ export const LEGAL_POLICIES = {
     "seoTitle": "Tài khoản & xóa dữ liệu | SkinID.vn",
     "seoDesc": "Phiên bản 2.0 — Tài khoản & xóa dữ liệu tại SkinID.vn.",
     "status": "current",
-    "pendingFields": [
-      "[30]",
-      "[Tải dữ liệu của tôi]"
-    ]
+    "pendingFields": []
   }
 };
 export const POLICY_LIST = Object.values(LEGAL_POLICIES);

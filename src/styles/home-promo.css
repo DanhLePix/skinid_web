@@ -109,18 +109,6 @@
 .promo-pick:hover .promo-pick__visual img { transform: translateY(-6px) scale(1.08) rotate(-2deg); }
 .promo-pick__name { font: 700 .92rem/1.45 var(--skinid-font-heading); color: var(--skinid-dark); min-height: 2.9em; }
 
-/* ---------- steps ---------- */
-.promo-steps { display: grid; grid-template-columns: 1fr 1.3fr auto; align-items: center; gap: clamp(24px, 4vw, 56px); margin-top: clamp(48px, 5vw, 76px); padding: clamp(28px, 3.4vw, 48px); border-radius: 32px; background: linear-gradient(120deg, var(--skinid-blush), rgba(255, 255, 255, .7)); box-shadow: var(--skinid-surface-shadow); }
-.promo-steps h3 { font-size: clamp(1.6rem, 2.6vw, 2.4rem); max-width: 14ch; margin-top: 14px; }
-.promo-steps ol { position: relative; display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; }
-.promo-steps ol::before { content: ""; position: absolute; left: 22px; top: 20px; bottom: 20px; width: 2px; background: linear-gradient(var(--skinid-primary), transparent); opacity: .3; }
-.promo-steps li { position: relative; display: flex; align-items: center; gap: 18px; transition: transform .35s cubic-bezier(.16, 1, .3, 1); }
-.promo-steps li:hover { transform: translateX(6px); }
-.promo-steps li > span { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: #fff; color: var(--skinid-primary); font: 600 .95rem var(--skinid-font-heading); box-shadow: 0 8px 20px rgba(224, 62, 98, .14); transition: background .3s ease, color .3s ease; }
-.promo-steps li:hover > span { background: var(--skinid-primary); color: #fff; }
-.promo-steps strong { display: block; font-size: .8rem; letter-spacing: .05em; }
-.promo-steps li p { margin: 2px 0 0; font-size: .8rem; }
-
 @keyframes promo-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
 @keyframes promo-spin { to { transform: rotate(360deg); } }
 @keyframes promo-shine { 0%, 55% { left: -60%; } 100% { left: 160%; } }
@@ -129,8 +117,6 @@
 @media (max-width: 1179px) {
   .promo-combos { gap: 18px; }
   .promo-combo__body { padding: 20px; }
-  .promo-steps { grid-template-columns: 1fr 1.3fr; }
-  .promo-steps .promo-cta { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 760px) {
   .promo-hero { grid-template-columns: 1fr; gap: 16px; }
@@ -142,7 +128,6 @@
   .promo-combo { border-radius: 26px; }
   .promo-rail { margin-inline: -16px; padding-inline: 16px; gap: 14px; }
   .promo-rail > li { flex-basis: 62%; }
-  .promo-steps { grid-template-columns: 1fr; border-radius: 26px; }
   .promo-stage .promo-cta { width: 100%; }
   .promo-ticker { transform: none; }
 }

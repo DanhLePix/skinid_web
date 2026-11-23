@@ -18,13 +18,6 @@ const CONTACT = {
   hours: COMPANY_INFO.workingHours
 };
 
-const STEPS = [
-  { id: 'like', icon: '👍', title: 'LIKE & FOLLOW', desc: 'Thích và theo dõi Fanpage chính thức SkinID.' },
-  { id: 'share', icon: '↗', title: 'SHARE BÀI VIẾT', desc: 'Chia sẻ bài viết ở chế độ CÔNG KHAI trên trang cá nhân.' },
-  { id: 'comment', icon: '💬', title: 'COMMENT “SKINID50”', desc: 'Bình luận đúng cú pháp ngay dưới bài viết.' },
-  { id: 'inbox', icon: '✦', title: 'TƯ VẤN TẠI CỬA HÀNG', desc: 'Nhắn SkinID để xác nhận điều kiện và mức ưu đãi tại cửa hàng.' }
-];
-
 const DEFAULT_VOUCHERS = [
   { code: 'FREESHIP', label: 'Miễn phí vận chuyển', sub: 'Hỗ trợ tối đa 30.000đ phí vận chuyển.' },
   { code: 'SKINID10', label: 'Giảm 10% đơn hàng', sub: 'Đơn từ 200.000đ, giảm tối đa 150.000đ.' },
@@ -44,11 +37,6 @@ function normalizeVouchers(list) {
 
 const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const openProduct = (productId) => document.dispatchEvent(new CustomEvent('skinid:open-product-detail', { detail: { productId } }));
-
-const Thumb = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11v9H4v-9zM7 11l4-8c1.5 0 2.5 1.2 2.2 2.7L12.6 9H19a2 2 0 0 1 2 2.4l-1.3 6.5A2 2 0 0 1 17.7 20H7" /></svg>;
-const Chat = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>;
-const Share = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 4 7 7-7 7v-4c-6 0-9 1.5-11 5 .5-6 4-10 11-10z" /></svg>;
-const Globe = () => <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></svg>;
 
 /** Scroll progress (0..1) of a tall section whose child sticks; reports the active stage and writes --p on the node. */
 function useStickyStages(count) {
@@ -102,25 +90,6 @@ function useHeroParallax() {
   return ref;
 }
 
-/** Price that visibly drops from the original to the 50% price once `on` becomes true. */
-function PriceDrop({ from, to, on }) {
-  const [value, setValue] = useState(from);
-  useEffect(() => {
-    if (!on) { setValue(from); return undefined; }
-    if (reducedMotion()) { setValue(to); return undefined; }
-    let frame = 0;
-    const start = performance.now();
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / 1100);
-      setValue(Math.round((from - (from - to) * (1 - Math.pow(1 - t, 3))) / 500) * 500);
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [on, from, to]);
-  return <b>{formatPrice(value)}</b>;
-}
-
 function AdvisorButtons({ className = '', light = false }) {
   return (
     <div className={`pl-advisor ${light ? 'pl-advisor--light' : ''} ${className}`}>
@@ -143,7 +112,7 @@ function Hero({ campaign, retailDeals = RETAIL_50_DEALS }) {
         <h1 className="skinid-editorial-title">Like &amp; share, <em>ưu đãi 50% tại cửa hàng.</em></h1>
         <p>Chọn sản phẩm TWON, D'VAH và bộ quà tặng yêu thích. Nhắn SkinID để xác nhận điều kiện ưu đãi tại cửa hàng; giá chương trình không áp dụng cho đơn online.</p>
         <div className="pl-hero__cta">
-          <a className="btn btn--primary pl-btn" href="#buoc-tham-gia"><span>Xem 3 bước nhận ưu đãi</span><i aria-hidden="true">↓</i></a>
+          <a className="btn btn--primary pl-btn" href="#san-pham-giam-50"><span>Xem sản phẩm giảm 50%</span><i aria-hidden="true">↓</i></a>
           <a className="collection-text-link" href="#bo-qua-tang">Xem bộ quà tặng <span aria-hidden="true">→</span></a>
         </div>
         {endDate && Number.isFinite(endDate.getTime()) && <small className="pl-hero__deadline">Chương trình đến {endDate.toLocaleDateString('vi-VN')}</small>}
@@ -158,77 +127,6 @@ function Hero({ campaign, retailDeals = RETAIL_50_DEALS }) {
         ))}
       </div>
     </header>
-  );
-}
-
-/* ---------- Scrollytelling: 3 steps ---------- */
-function StepsStory({ retailDeals = RETAIL_50_DEALS, steps = STEPS }) {
-  const { ref, active, goTo } = useStickyStages(steps.length);
-  const hero = retailDeals?.[0] || RETAIL_50_DEALS[0];
-  return (
-    <section className="pl-steps" id="buoc-tham-gia" ref={ref} aria-label="3 bước nhận ưu đãi giảm 50%">
-      <div className="pl-steps__sticky">
-        <div className="pl-steps__panel">
-          <span className="skinid-editorial-kicker">CÁCH NHẬN ƯU ĐÃI 50%</span>
-          <h2>Ba bước nhẹ nhàng, <em>một mức giá đáng yêu.</em></h2>
-          <ol className="pl-steps__list">
-            {STEPS.map((step, i) => (
-              <li key={step.id} className={i === active ? 'is-active' : i < active ? 'is-done' : ''}>
-                <button type="button" onClick={() => goTo(i)} aria-label={`Bước ${i + 1}: ${step.title}`} aria-current={i === active ? 'step' : undefined}>
-                  <span className="pl-steps__num">{i < active ? '✓' : `0${i + 1}`}</span>
-                  <span className="pl-steps__text"><strong>{step.title}</strong><span>{step.desc}</span></span>
-                </button>
-              </li>
-            ))}
-          </ol>
-          <span className="pl-steps__bar" aria-hidden="true"><i /></span>
-          <p className="pl-steps__note">Ưu đãi áp dụng cho sản phẩm bán lẻ. Đội ngũ SkinID sẽ kiểm tra bài chia sẻ và bình luận của bạn qua tin nhắn trước khi áp dụng giá.</p>
-        </div>
-
-        <div className="pl-phone-wrap" aria-hidden="true">
-          <span className="pl-glow" />
-          <div className="pl-phone" data-stage={active}>
-            <div className="pl-fb__head">
-              <span className="pl-fb__avatar"><img src={assetUrl('/images/SkinID_Icon_Monogram_Transparent.png')} alt="" /></span>
-              <div className="pl-fb__who">
-                <b>SkinID shop</b>
-                <small>Vừa xong · <span className={`pl-public ${active >= 1 ? 'is-on' : ''}`}><Globe />{active >= 1 ? ' Công khai' : ''}</span></small>
-              </div>
-              <span className={`pl-follow ${active >= 0 ? 'is-on' : ''}`}>{active >= 0 ? 'Đang theo dõi' : 'Theo dõi'}</span>
-              <span className="pl-fb__more" aria-hidden="true">···</span>
-            </div>
-            <p className="pl-fb__text">Ưu đãi tại cửa hàng · Like &amp; Share giảm 50% 💗 Yêu thương bản thân – đẹp hơn mỗi ngày cùng SkinID!</p>
-            <img className="pl-fb__img" src={assetUrl(CURATED_COMBOS[1].image)} alt="" />
-            <div className="pl-fb__react">
-              <span className="pl-fb__react-icons"><i className="is-like"><Thumb /></i><i className="is-love">❤</i></span>
-              <span className={`pl-fb__react-text ${active >= 0 ? 'is-on' : ''}`}>{active >= 0 ? 'Bạn và những người khác' : 'Hãy là người đầu tiên thích'}</span>
-            </div>
-            <div className="pl-fb__actions">
-              <span className={`pl-act ${active >= 0 ? 'is-on' : ''}`}><Thumb />Thích</span>
-              <span className={`pl-act ${active >= 2 ? 'is-on' : ''}`}><Chat />Bình luận</span>
-              <span className={`pl-act ${active >= 1 ? 'is-on' : ''}`}><Share />Chia sẻ</span>
-            </div>
-            <div className={`pl-shared ${active >= 1 ? 'is-on' : ''}`}><Share /> Đã chia sẻ lên trang cá nhân · <Globe /> Công khai</div>
-            <div className={`pl-comment ${active >= 2 ? 'is-on' : ''}`}>
-              <span className="pl-fb__avatar pl-fb__avatar--you">B</span>
-              <div className="pl-comment__main">
-                <span className="pl-comment__bubble"><b>Bạn</b><span key={active >= 2 ? 'on' : 'off'} className="pl-comment__text">SKINID50</span></span>
-                <small>Thích · Phản hồi · Vừa xong</small>
-              </div>
-            </div>
-            <div className={`pl-deal ${active >= 3 ? 'is-on' : ''}`}>
-              <img src={assetUrl(hero.image, hero.brandSlug)} alt="" />
-              <div>
-                <small>{hero.name}</small>
-                <span className="promotion-price-channel">Giá ưu đãi tại cửa hàng</span>
-              <div className="pl-deal__price"><PriceDrop from={hero.originalPrice} to={hero.price} on={active >= 3} /><del>{formatPrice(hero.originalPrice)}</del></div>
-                <span className="pl-deal__chip">−50% · Áp dụng tại cửa hàng</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -376,7 +274,7 @@ function FinalCta() {
 
 export default function PromotionsLanding() {
   const [vouchers, setVouchers] = useState(DEFAULT_VOUCHERS);
-  const { campaign: firestoreCampaign, combos, flashSale, steps } = useCampaign();
+  const { campaign: firestoreCampaign, combos, flashSale } = useCampaign();
   const [campaign, setCampaign] = useState(firestoreCampaign);
 
   useEffect(() => {
@@ -403,13 +301,11 @@ export default function PromotionsLanding() {
 
   const activeCombos = combos?.length ? combos : CURATED_COMBOS;
   const activeDeals = flashSale?.length ? flashSale : RETAIL_50_DEALS;
-  const activeSteps = steps?.length ? steps : STEPS;
 
   return (
     <div className="pl-page">
       <Hero campaign={campaign} retailDeals={activeDeals} />
       <StorePromotionNotice campaign={campaign} />
-      <StepsStory retailDeals={activeDeals} steps={activeSteps} />
       <RetailDeals retailDeals={activeDeals} />
       <GiftStory combos={activeCombos} />
       <Vouchers vouchers={vouchers} />
