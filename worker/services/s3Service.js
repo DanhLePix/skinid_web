@@ -236,6 +236,48 @@ export function invoiceTotals(order = {}) {
 }
 
 /**
+ * Spread an order-level voucher across invoice lines as per-line discount amounts.
+ *
+ * The e-invoice renders line-level "Discount" ("Mức giảm giá cho sản phẩm", ES3 v1.4
+ * §Invoices/Save/v2 → Items), while InvoiceDiscount and the Promotion* block are
+ * order-level fields that S3 subtracts on its own — carrying the voucher in more than
+ * one of those charged it twice (632.000 - 133.000 - 133.000 = 366.000), and the
+ * Promotion* block alone never printed a "Khuyến mãi" row on the issued draft.
+ * Largest-remainder rounding keeps the allocations summing to the voucher exactly, so
+ * the discounted lines always land on InvoiceAmount without rounding drift.
+ */
+export function allocateVoucherLines(sourceItems = [], discount = 0) {
+  const lines = (Array.isArray(sourceItems) ? sourceItems : []).map(item => {
+    const price = Number(item?.price ?? item?.unitPrice ?? 0);
+    const quantity = Number(item?.quantity ?? 1);
+    const gross = Number.isFinite(price) && Number.isFinite(quantity) ? price * quantity : 0;
+    return gross > 0 ? gross : 0;
+  });
+  const voucher = Math.max(0, Math.round(Number(discount) || 0));
+  if (!voucher || !lines.length) return lines.map(() => 0);
+
+  const grossSum = lines.reduce((sum, value) => sum + value, 0);
+  if (grossSum <= 0) return lines.map(() => 0);
+  // A line must never be discounted past zero; the worker already clamps coupons to
+  // the subtotal, so this cap only guards malformed orders.
+  const capped = Math.min(voucher, grossSum);
+
+  const raw = lines.map(gross => (capped * gross) / grossSum);
+  const allocated = raw.map(value => Math.floor(value));
+  let remainder = capped - allocated.reduce((sum, value) => sum + value, 0);
+  const byFraction = raw
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  let cursor = 0;
+  while (remainder > 0) {
+    allocated[byFraction[cursor % byFraction.length].index] += 1;
+    remainder -= 1;
+    cursor += 1;
+  }
+  return allocated;
+}
+
+/**
  * Map SkinID order to S3 PreOrder payload
  * Follows "Tài liệu API tích hợp ES3 v1.4" Section 8
  */
@@ -335,7 +377,7 @@ export function mapOrderToS3Payload(order, config, customerId = 0) {
  * Map SkinID order to S3 sales invoice payload
  * Follows "Tài liệu API tích hợp ES3 v1.4" Section 3: deducts stock and issues the e-invoice.
  */
-export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
+export function mapOrderToS3InvoicePayload(order, config, customerId = 0, vatRates = null) {
   const isBankTransfer = order.paymentMethod === 'bank_transfer';
   const orderId = String(order.id || order.orderId || '').trim();
   const branchId = Number(config.branchId || 9099);
@@ -347,6 +389,8 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
   if (!sourceItems.length) {
     throw new Error(`Đơn ${orderId} không có sản phẩm để xuất hoá đơn.`);
   }
+
+  const lineDiscounts = allocateVoucherLines(sourceItems, discount);
 
   const items = sourceItems.map((item, index) => {
     const unitPrice = Number(item.price || item.unitPrice || 0);
@@ -360,12 +404,30 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
     const productName = code && !rawName.includes(code)
       ? `[${code}] ${rawName}`.slice(0, 200)
       : rawName.slice(0, 200);
+    const lineDiscount = Math.max(0, Math.round(lineDiscounts[index] || 0));
+
+    // Thuế suất dòng: ưu tiên bảng vatRates lấy từ catalog S3 (ES3 yêu cầu
+    // ProductVAT là thuế suất thật của sản phẩm — HĐĐT lấy thuế suất từ trường
+    // này, gửi "0" sẽ in hóa đơn thuế suất 0%). ProductVATTaxAmount là tiền
+    // thuế TRÍCH RA từ giá đã gồm VAT: net − net/(1+thuế suất) — nếu gửi 0,
+    // HĐĐD tự tính lại đúng nhưng báo cáo thuế của S3 lệch với hóa đơn.
+    const rateInfo = typeof vatRates?.get === 'function' ? vatRates.get(productId) : vatRates?.[productId];
+    const vatRate = rateInfo === 'KCT' ? 'KCT' : (Number.isFinite(Number(rateInfo)) && Number(rateInfo) > 0 ? String(Number(rateInfo)) : rateInfo == null ? null : String(rateInfo));
+    const lineNet = unitPrice * quantity - lineDiscount;
+    let productVAT = '0';
+    let productVATTaxAmount = 0;
+    if (vatRate === 'KCT') {
+      productVAT = 'KCT';
+    } else if (vatRate !== null && Number(vatRate) > 0) {
+      productVAT = String(vatRate);
+      productVATTaxAmount = Math.round(lineNet * Number(vatRate) / (100 + Number(vatRate)));
+    }
 
     return {
       YS_ProductID: productId,
       QuantitySold: quantity,
       PriceSold: unitPrice,
-      Discount: "0",
+      Discount: lineDiscount > 0 ? String(lineDiscount) : "0",
       Attributes: code ? `SKU: ${code}` : "",
       AttributeKey: "",
       ReferenceCode: 0,
@@ -375,8 +437,8 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
       ProductName: productName,
       UOMDisplay: "Cái",
       ImageUrl: item.imageUrl || "",
-      ProductVAT: "0",
-      ProductVATTaxAmount: 0
+      ProductVAT: productVAT,
+      ProductVATTaxAmount: productVATTaxAmount
     };
   });
 
@@ -409,15 +471,17 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0) {
     CustomerId: resolvedCustomerId,
     InvoiceAmount: total,
     TotalAmount: gross,
-    // The e-invoice prints the "Khuyến mãi" line from the Promotion* block, not from
-    // InvoiceDiscount. SkinID vouchers are order-level discounts, so they go here and
-    // InvoiceDiscount stays 0 — sending both would deduct the voucher twice.
+    // The voucher rides on Items[].Discount (allocated above) so the e-invoice prints a
+    // per-line "Giảm giá" the buyer can see. InvoiceDiscount and the Promotion* block
+    // are order-level fields S3 subtracts independently — sending the voucher in any of
+    // them on top of the line discounts would deduct it twice. The voucher name stays
+    // human-readable in Notes because the numeric fields carry no label.
     InvoiceDiscount: "0",
-    PromotionName: discount > 0 ? `Voucher ${voucherLabel}`.trim() : "",
+    PromotionName: "",
     PromotionAmount: 0,
-    PromotionDiscount: discount > 0 ? String(discount) : "0",
-    PromotionDiscountAmount: discount,
-    Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
+    PromotionDiscount: "0",
+    PromotionDiscountAmount: 0,
+    Notes: `[SkinID Đơn: #${orderId.slice(0, 8)}] ${order.note || ''}${voucherLabel ? ` | Voucher ${voucherLabel}` : ''} | ${isBankTransfer ? 'Vietcombank 1063583549' : 'COD'}`.trim(),
     CustomerReceived: total,
     ReferenceCode: 0,
     DownPayment: 0,
@@ -476,6 +540,9 @@ export async function fetchS3ProductCatalog({ token, config = {}, fetchFn = fetc
           id,
           name: String(row?.name || ''),
           price: Number(row?.price || 0),
+          // Thuế suất khai trên sản phẩm S3 ("0"/"5"/"8"/"10"/"KCT") — hóa đơn
+          // điện tử lấy thuế suất từ ProductVAT của dòng, nên phải giữ nguyên.
+          vat: row?.vat === undefined || row?.vat === null ? null : String(row.vat),
           quantityOnHand: Number(row?.quantity_on_hand ?? 0),
           inventory: row?.inventory !== false,
           status: String(row?.status || '')
@@ -696,7 +763,7 @@ export async function issueInvoiceToS3({ orderId, order, env = {}, timeoutMs = 8
       fetchFn: timedFetch
     });
 
-    const payload = mapOrderToS3InvoicePayload(normalizedOrder, config, customerId);
+    let payload = mapOrderToS3InvoicePayload(normalizedOrder, config, customerId);
     const baseUrl = (config.baseUrl || 'https://m.es3.vn').replace(/\/+$/, '');
 
     // Pre-flight: read the branch catalog and refuse to post an invoice S3 would drop.
@@ -704,8 +771,12 @@ export async function issueInvoiceToS3({ orderId, order, env = {}, timeoutMs = 8
     // order would be recorded as invoiced while no invoice and no stock movement exist.
     let catalog = null;
     let stockBefore = null;
+    let vatRates = null;
     if (verify) {
       catalog = await fetchS3ProductCatalog({ token, config, fetchFn: timedFetch });
+      vatRates = catalog
+        ? new Map([...catalog].filter(([, entry]) => entry.vat !== null && entry.vat !== undefined).map(([id, entry]) => [id, entry.vat]))
+        : null;
       const lineProblems = findInvoiceLineProblems(payload.Items, catalog);
       if (lineProblems.length) {
         const problemMsg = lineProblems.join('; ');
@@ -742,6 +813,13 @@ export async function issueInvoiceToS3({ orderId, order, env = {}, timeoutMs = 8
       if (inventory && inventory.size === 0 && catalog && catalog.size > 0) {
         console.warn(`[S3 Invoice Stock] Order #${normalizedOrder.id}: đọc được danh mục ${catalog.size} sản phẩm nhưng tồn kho chi nhánh rỗng — bỏ qua kiểm tồn.`);
       }
+    }
+
+    // Áp thuế suất thật từng dòng từ catalog S3 (HĐĐT lấy thuế suất từ
+    // ProductVAT; ProductVATTaxAmount là tiền thuế trích từ giá đã gồm VAT
+    // để báo cáo thuế khớp hóa đơn — theo hướng dẫn của ES3).
+    if (vatRates) {
+      payload = mapOrderToS3InvoicePayload(normalizedOrder, config, customerId, vatRates);
     }
 
     controller.signal.throwIfAborted();

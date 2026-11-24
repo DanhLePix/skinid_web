@@ -192,8 +192,12 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(invoicePayload.InvoiceAmount, 2150000);
   assert.equal(invoicePayload.TotalAmount, 2300000);
   assert.equal(invoicePayload.InvoiceDiscount, '0');
-  assert.equal(invoicePayload.PromotionDiscountAmount, 150000);
-  assert.equal(invoicePayload.PromotionName, 'Voucher SKINID10');
+  assert.equal(invoicePayload.PromotionDiscountAmount, 0);
+  assert.equal(invoicePayload.PromotionName, '');
+  // The voucher rides on the line item so the e-invoice prints a per-line "Giảm giá".
+  // Order-level InvoiceDiscount/Promotion* must stay zero: S3 subtracts each of them
+  // on top of the line discounts, which charged the voucher twice.
+  assert.equal(invoicePayload.Items[0].Discount, '150000');
   assert.equal(invoicePayload.CompleteWithCOD, false);
   assert.equal(invoicePayload.Articles, undefined);
   assert.equal(invoicePayload.Items.length, 1);
@@ -541,9 +545,14 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   assert.equal(voucherInvoice.TotalAmount, 632000);
   assert.equal(voucherInvoice.InvoiceAmount, 499000);
   assert.equal(voucherInvoice.InvoiceDiscount, '0');
-  assert.equal(voucherInvoice.PromotionDiscountAmount, 133000);
-  assert.equal(voucherInvoice.PromotionDiscount, '133000');
-  assert.equal(voucherInvoice.PromotionName, 'Voucher GIANG');
+  assert.equal(voucherInvoice.PromotionDiscountAmount, 0);
+  assert.equal(voucherInvoice.PromotionName, '');
+  // The line allocations must sum to the voucher exactly, so the discounted lines land
+  // on InvoiceAmount: 632.000 - 133.000 = 499.000, not 499.001 like S3's own rounding.
+  assert.deepEqual(voucherInvoice.Items.map(item => Number(item.Discount)), [58082, 37249, 37669]);
+  assert.equal(voucherInvoice.Items.reduce((sum, item) => sum + Number(item.Discount), 0), 133000);
+  assert.equal(voucherInvoice.TotalAmount - voucherInvoice.Items.reduce((sum, item) => sum + Number(item.Discount), 0), voucherInvoice.InvoiceAmount);
+  assert.match(voucherInvoice.Notes, /Voucher GIANG/, 'tên voucher phải còn đọc được trên Notes');
 
   const voucherPreOrder = mapOrderToS3Payload(voucherOrder, defaultConfig, 841894);
   const chargedTwice = voucherPreOrder.PreOrder.TotalAmount
@@ -555,6 +564,19 @@ test('S3 Retail Software Integration - Config, Mapping, Token & Fail-Safe', asyn
   const noVoucher = mapOrderToS3InvoicePayload({ ...mockCodOrder, couponCode: null }, defaultConfig, 922848);
   assert.equal(noVoucher.PromotionName, '');
   assert.equal(noVoucher.PromotionDiscountAmount, 0);
+  assert.equal(noVoucher.Items[0].Discount, '0');
+
+  // Allocation unit: largest-remainder rounding keeps the exact sum on awkward splits.
+  const { allocateVoucherLines } = await import('../worker/services/s3Service.js');
+  assert.deepEqual(allocateVoucherLines(voucherOrder.items, 133000), [58082, 37249, 37669]);
+  assert.deepEqual(allocateVoucherLines(voucherOrder.items, 0), [0, 0, 0]);
+  assert.deepEqual(allocateVoucherLines([], 100000), []);
+  assert.deepEqual(allocateVoucherLines([{ price: 0, quantity: 1 }], 100000), [0]);
+  assert.equal(
+    allocateVoucherLines([{ price: 33333, quantity: 1 }, { price: 33334, quantity: 1 }, { price: 33333, quantity: 1 }], 100)
+      .reduce((sum, value) => sum + value, 0),
+    100
+  );
 
   // 11. Branch inventory: POST /Vision/Products/Inventories, and stock shortages block.
   resetS3TokenCache();
