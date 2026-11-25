@@ -281,7 +281,43 @@ export function allocateVoucherLines(sourceItems = [], discount = 0) {
  * Map SkinID order to S3 PreOrder payload
  * Follows "Tài liệu API tích hợp ES3 v1.4" Section 8
  */
-export function mapOrderToS3Payload(order, config, customerId = 0) {
+/**
+ * Per-line VAT fields for an ES3 order/invoice line.
+ *
+ * ES3 guidance: ProductVAT must carry the product's real tax rate ("0"/"5"/"8"/"10",
+ * "KCT" for non-taxed goods) — the e-invoice renders the rate from this field, so a
+ * "0" prints a 0% invoice. ProductVATTaxAmount is the tax EXTRACTED from the
+ * VAT-inclusive line amount (net − net / (1 + rate)); when it is sent as 0 the
+ * e-invoice still self-computes, but S3's own order details and tax reports then
+ * disagree with the issued invoice. Totals are never changed by these fields —
+ * they are informational extractions from VAT-inclusive prices.
+ *
+ * vatRates maps YS_ProductID → rate (number | "KCT"), sourced from the branch
+ * catalog (fetchS3ProductCatalog). Missing product → "0"/0 (previous behaviour).
+ */
+export function mapLineVat(productId, lineNet, vatRates) {
+  const rateInfo = typeof vatRates?.get === 'function' ? vatRates.get(productId) : vatRates?.[productId];
+  const numericRate = Number(rateInfo);
+  if (rateInfo === 'KCT') {
+    return { ProductVAT: 'KCT', ProductVATTaxAmount: 0 };
+  }
+  if (Number.isFinite(numericRate) && numericRate > 0) {
+    return {
+      ProductVAT: String(numericRate),
+      ProductVATTaxAmount: Math.round(lineNet * numericRate / (100 + numericRate))
+    };
+  }
+  return { ProductVAT: '0', ProductVATTaxAmount: 0 };
+}
+
+/** Build the productId → tax-rate map handed to the mapping functions. */
+export function buildVatRates(catalog) {
+  return catalog
+    ? new Map([...catalog].filter(([, entry]) => entry.vat !== null && entry.vat !== undefined).map(([id, entry]) => [id, entry.vat]))
+    : null;
+}
+
+export function mapOrderToS3Payload(order, config, customerId = 0, vatRates = null) {
   const isBankTransfer = order.paymentMethod === 'bank_transfer';
   const orderId = String(order.id || order.orderId || '').trim();
   const branchId = Number(config.branchId || 9099);
@@ -329,8 +365,7 @@ export function mapOrderToS3Payload(order, config, customerId = 0) {
       IsChangedPrice: false,
       UOMs: null,
       Promotions: null,
-      ProductVAT: "0",
-      ProductVATTaxAmount: 0
+      ...mapLineVat(productId, unitPrice * quantity, vatRates)
     };
   });
 
@@ -405,23 +440,7 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0, vatRat
       ? `[${code}] ${rawName}`.slice(0, 200)
       : rawName.slice(0, 200);
     const lineDiscount = Math.max(0, Math.round(lineDiscounts[index] || 0));
-
-    // Thuế suất dòng: ưu tiên bảng vatRates lấy từ catalog S3 (ES3 yêu cầu
-    // ProductVAT là thuế suất thật của sản phẩm — HĐĐT lấy thuế suất từ trường
-    // này, gửi "0" sẽ in hóa đơn thuế suất 0%). ProductVATTaxAmount là tiền
-    // thuế TRÍCH RA từ giá đã gồm VAT: net − net/(1+thuế suất) — nếu gửi 0,
-    // HĐĐD tự tính lại đúng nhưng báo cáo thuế của S3 lệch với hóa đơn.
-    const rateInfo = typeof vatRates?.get === 'function' ? vatRates.get(productId) : vatRates?.[productId];
-    const vatRate = rateInfo === 'KCT' ? 'KCT' : (Number.isFinite(Number(rateInfo)) && Number(rateInfo) > 0 ? String(Number(rateInfo)) : rateInfo == null ? null : String(rateInfo));
     const lineNet = unitPrice * quantity - lineDiscount;
-    let productVAT = '0';
-    let productVATTaxAmount = 0;
-    if (vatRate === 'KCT') {
-      productVAT = 'KCT';
-    } else if (vatRate !== null && Number(vatRate) > 0) {
-      productVAT = String(vatRate);
-      productVATTaxAmount = Math.round(lineNet * Number(vatRate) / (100 + Number(vatRate)));
-    }
 
     return {
       YS_ProductID: productId,
@@ -437,8 +456,7 @@ export function mapOrderToS3InvoicePayload(order, config, customerId = 0, vatRat
       ProductName: productName,
       UOMDisplay: "Cái",
       ImageUrl: item.imageUrl || "",
-      ProductVAT: productVAT,
-      ProductVATTaxAmount: productVATTaxAmount
+      ...mapLineVat(productId, lineNet, vatRates)
     };
   });
 
@@ -774,9 +792,7 @@ export async function issueInvoiceToS3({ orderId, order, env = {}, timeoutMs = 8
     let vatRates = null;
     if (verify) {
       catalog = await fetchS3ProductCatalog({ token, config, fetchFn: timedFetch });
-      vatRates = catalog
-        ? new Map([...catalog].filter(([, entry]) => entry.vat !== null && entry.vat !== undefined).map(([id, entry]) => [id, entry.vat]))
-        : null;
+      vatRates = buildVatRates(catalog);
       const lineProblems = findInvoiceLineProblems(payload.Items, catalog);
       if (lineProblems.length) {
         const problemMsg = lineProblems.join('; ');
@@ -821,7 +837,6 @@ export async function issueInvoiceToS3({ orderId, order, env = {}, timeoutMs = 8
     if (vatRates) {
       payload = mapOrderToS3InvoicePayload(normalizedOrder, config, customerId, vatRates);
     }
-
     controller.signal.throwIfAborted();
     dispatched = true;
     const response = await timedFetch(`${baseUrl}/Vision/Invoices/Save/v2`, {
@@ -954,7 +969,11 @@ export async function syncOrderToS3({ orderId, order, env = {}, timeoutMs = 4000
       fetchFn: timedFetch
     });
 
-    const payload = mapOrderToS3Payload(normalizedOrder, config, customerId);
+    // Thuế suất dòng lấy từ catalog chi nhánh; catalog lỗi → null → dòng "0"
+    // (giữ nguyên hành vi cũ thay vì chặn đồng bộ vì lý do đọc danh mục).
+    const catalog = await fetchS3ProductCatalog({ token, config, fetchFn: timedFetch });
+    const vatRates = buildVatRates(catalog);
+    const payload = mapOrderToS3Payload(normalizedOrder, config, customerId, vatRates);
     const baseUrl = (config.baseUrl || 'https://m.es3.vn').replace(/\/+$/, '');
     const postUrl = `${baseUrl}/Vision/AddNewPreOrder/v2`;
 
