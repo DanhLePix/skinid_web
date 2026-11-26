@@ -282,7 +282,7 @@ export function allocateVoucherLines(sourceItems = [], discount = 0) {
  * Follows "Tài liệu API tích hợp ES3 v1.4" Section 8
  */
 /**
- * Per-line VAT fields for an ES3 order/invoice line.
+ * Per-line VAT fields for an ES3 sales invoice line (`POST /Vision/Invoices/Save/v2` → `Items[]`).
  *
  * ES3 guidance: ProductVAT must carry the product's real tax rate ("0"/"5"/"8"/"10",
  * "KCT" for non-taxed goods) — the e-invoice renders the rate from this field, so a
@@ -308,6 +308,16 @@ export function mapLineVat(productId, lineNet, vatRates) {
     };
   }
   return { ProductVAT: '0', ProductVATTaxAmount: 0 };
+}
+
+/**
+ * Per-line VAT fields for an ES3 preorder line (`POST /Vision/AddNewPreOrder/v2` → `PreOrderItems[]`).
+ * Unlike `Invoices/Save/v2` (`ProductVAT` / `ProductVATTaxAmount`), ES3's preorder item DTO
+ * names these two fields `VAT` and `VATTaxAmount`.
+ */
+export function mapPreOrderLineVat(productId, lineNet, vatRates) {
+  const { ProductVAT, ProductVATTaxAmount } = mapLineVat(productId, lineNet, vatRates);
+  return { VAT: ProductVAT, VATTaxAmount: ProductVATTaxAmount };
 }
 
 /** Build the productId → tax-rate map handed to the mapping functions. */
@@ -365,7 +375,7 @@ export function mapOrderToS3Payload(order, config, customerId = 0, vatRates = nu
       IsChangedPrice: false,
       UOMs: null,
       Promotions: null,
-      ...mapLineVat(productId, unitPrice * quantity, vatRates)
+      ...mapPreOrderLineVat(productId, unitPrice * quantity, vatRates)
     };
   });
 

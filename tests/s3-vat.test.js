@@ -59,7 +59,7 @@ test('S3 invoice VAT - ProductVAT/ProductVATTaxAmount theo bảng thuế suất 
   assert.equal(objRates.Items[0].ProductVATTaxAmount, 1778);
 });
 
-test('S3 preorder VAT - PreOrderItems nhận thuế suất giống hóa đơn', async () => {
+test('S3 preorder VAT - PreOrderItems dùng trường VAT/VATTaxAmount (không dùng ProductVAT)', async () => {
   const { mapOrderToS3Payload } = await import('../worker/services/s3Service.js');
 
   const config = { branchId: 9147, cashierId: 16668 };
@@ -75,19 +75,27 @@ test('S3 preorder VAT - PreOrderItems nhận thuế suất giống hóa đơn', 
     ]
   };
 
-  // Không có bảng thuế → hành vi cũ (0).
+  // Không có bảng thuế → hành vi cũ (0), không phát sinh trường ProductVAT/ProductVATTaxAmount.
   const plain = mapOrderToS3Payload(order, config, 922848);
-  assert.equal(plain.PreOrderItems[0].ProductVAT, '0');
-  assert.equal(plain.PreOrderItems[0].ProductVATTaxAmount, 0);
+  assert.equal(plain.PreOrderItems[0].VAT, '0');
+  assert.equal(plain.PreOrderItems[0].VATTaxAmount, 0);
+  assert.equal(plain.PreOrderItems[0].ProductVAT, undefined);
+  assert.equal(plain.PreOrderItems[0].ProductVATTaxAmount, undefined);
+  assert.equal(plain.PreOrder.VAT, 0);
+  assert.equal(plain.PreOrder.VATTaxAmount, 0);
   assert.equal(plain.PreOrder.InvoiceAmount, 74000);
 
-  // Có thuế suất: dòng 1 = 8% → 1778; dòng 2 = KCT → 0. Tổng không đổi.
+  // Có thuế suất: dòng 1 = 8% → 1778; dòng 2 = KCT → 0. Cấp đơn vẫn VAT = 0, tổng không đổi.
   const rates = new Map([[111, 8], [222, 'KCT']]);
   const withRates = mapOrderToS3Payload(order, config, 922848, rates);
-  assert.equal(withRates.PreOrderItems[0].ProductVAT, '8');
-  assert.equal(withRates.PreOrderItems[0].ProductVATTaxAmount, 1778);
-  assert.equal(withRates.PreOrderItems[1].ProductVAT, 'KCT');
-  assert.equal(withRates.PreOrderItems[1].ProductVATTaxAmount, 0);
+  assert.equal(withRates.PreOrderItems[0].VAT, '8');
+  assert.equal(withRates.PreOrderItems[0].VATTaxAmount, 1778);
+  assert.equal(withRates.PreOrderItems[0].ProductVAT, undefined);
+  assert.equal(withRates.PreOrderItems[0].ProductVATTaxAmount, undefined);
+  assert.equal(withRates.PreOrderItems[1].VAT, 'KCT');
+  assert.equal(withRates.PreOrderItems[1].VATTaxAmount, 0);
+  assert.equal(withRates.PreOrder.VAT, 0);
+  assert.equal(withRates.PreOrder.VATTaxAmount, 0);
   assert.equal(withRates.PreOrder.InvoiceAmount, 74000);
   assert.equal(withRates.PreOrder.TotalAmount, 74000);
 });
